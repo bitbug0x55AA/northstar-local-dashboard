@@ -17,7 +17,8 @@
   async function load() {
     const params = new URLSearchParams({ tab: state.tab, level: state.level, status: state.status, q: state.q });
     const response = await fetch(`/api/observability?${params}`);
-    const data = await response.json();
+    const contentType = response.headers.get('content-type') || '';
+    const data = contentType.includes('application/json') ? await response.json() : { error: `Observability API returned ${response.status} ${response.statusText}. Restart the Northstar server on the current branch.` };
     if (!response.ok || data.error) throw new Error(data.error || 'Unable to load observability data');
     state.events = data.events; state.summary = data.summary; render();
   }
