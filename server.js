@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const { spawn } = require('child_process');
+const { readPlanner, applyOperations } = require('./server/planner-store');
+const { interpretPlannerInput } = require('./server/planner-llm');
 
 const PORT = Number(process.env.PORT || 4173);
 const ROOT = __dirname;
@@ -10,6 +12,7 @@ const HOME = process.env.USERPROFILE || process.env.HOME || '';
 const LOCAL_ORIGINS = new Set([`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`]);
 const CREDENTIAL_DIR = process.platform === 'win32' && HOME ? path.join(HOME, 'AppData', 'Roaming', 'Northstar') : '';
 const CREDENTIAL_FILE = CREDENTIAL_DIR ? path.join(CREDENTIAL_DIR, 'github-token.dpapi') : '';
+const PLANNER_ENABLED = process.env.NORTHSTAR_PLANNER_ENABLED === 'true';
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -541,6 +544,30 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && req.url === '/api/usage') {
       sendJson(res, 200, getLocalUsage());
+      return;
+    }
+    if (req.method === 'GET' && req.url === '/api/planner/status') {
+      sendJson(res, 200, {
+        enabled: PLANNER_ENABLED,
+        llmConfigured: Boolean(process.env.NORTHSTAR_LLM_URL && process.env.NORTHSTAR_LLM_MODEL)
+      });
+      return;
+    }
+    if (PLANNER_ENABLED && req.method === 'GET' && req.url === '/api/planner') {
+      sendJson(res, 200, readPlanner());
+      return;
+    }
+    if (PLANNER_ENABLED && req.method === 'POST' && req.url === '/api/planner/operations') {
+      assertLocalOrigin(req);
+      const body = JSON.parse(await readBody(req) || '{}');
+      sendJson(res, 200, applyOperations(body.operations));
+      return;
+    }
+    if (PLANNER_ENABLED && req.method === 'POST' && req.url === '/api/planner/interpret') {
+      assertLocalOrigin(req);
+      const body = JSON.parse(await readBody(req) || '{}');
+      if (!String(body.input || '').trim()) throw new Error('Planner input is required');
+      sendJson(res, 200, await interpretPlannerInput(body.input));
       return;
     }
     if (req.method === 'POST' && req.url === '/api/shutdown') {

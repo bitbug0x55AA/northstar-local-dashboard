@@ -61,6 +61,26 @@ Only aggregated usage data is stored. You can override the default paths before 
 
 Codex subscription-limit information is read from local Codex rate-limit snapshots when available. Claude Code subscription limits are shown only if local logs expose equivalent data.
 
+## Personal Planner Feature Preview
+
+The Planner is intentionally isolated behind an environment flag. To run this branch with the Planner enabled:
+
+```powershell
+$env:NORTHSTAR_PLANNER_ENABLED = 'true'
+.\start-windows.ps1
+```
+
+Planner data is stored separately under `%APPDATA%\Northstar\planner` by default. Set `NORTHSTAR_PLANNER_DIR` to use another local directory. The Planner API uses `/api/planner/*` and does not modify GitHub or AI usage data.
+
+Natural-language interpretation is optional. Configure an OpenAI-compatible local model endpoint and model name before starting:
+
+```powershell
+$env:NORTHSTAR_LLM_URL = 'http://127.0.0.1:11434/api/chat'
+$env:NORTHSTAR_LLM_MODEL = 'qwen2.5:3b'
+```
+
+The model only returns proposed Planner operations. The UI previews the operations and requires confirmation before saving them. The first implementation supports manual tasks and progress logs; event scheduling, project linking, and external calendar sync remain separate follow-up work.
+
 ## Roadmap
 
 1. Add a Windows scheduled task or background helper for persistent sync outside the browser tab.

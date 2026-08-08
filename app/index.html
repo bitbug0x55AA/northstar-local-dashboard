@@ -20,6 +20,7 @@
           <button class="nav-item" data-view="github"><span class="nav-icon">◉</span>GitHub Projects</button>
           <button class="nav-item" data-view="usage"><span class="nav-icon">◌</span>AI Usage</button>
           <button class="nav-item" data-view="settings"><span class="nav-icon">⚙</span>Settings</button>
+          <button class="nav-item planner-nav" data-view="planner" hidden><span class="nav-icon">*</span>Personal Planner</button>
         </nav>
         <div class="sidebar-bottom">
           <div class="sync-mini"><span class="pulse"></span><div><b id="syncLabel">Demo data</b><small id="syncTime">Waiting for sync</small></div></div>
@@ -35,10 +36,13 @@
         <section id="view-overview" class="view active-view"></section>
         <section id="view-github" class="view"></section>
         <section id="view-usage" class="view"></section>
+        <section id="view-planner" class="view"></section>
         <section id="view-settings" class="view"></section>
       </main>
     </div>
     <div id="toast" class="toast" role="status"></div>
     <script src="/app/app.js"></script>
+    <link rel="stylesheet" href="/app/planner.css" />
+    <script src="/app/planner.js"></script>
   </body>
 </html>

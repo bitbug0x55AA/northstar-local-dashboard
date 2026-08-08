@@ -1,0 +1,28 @@
+.planner-heading { margin-bottom: 25px; }
+.planner-metrics { margin-bottom: 17px; }
+.planner-grid { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(320px,.85fr); gap:17px; }
+.planner-input-panel textarea,.planner-log-input { width:100%; min-height:100px; resize:vertical; color:var(--text); background:#0d1624; border:1px solid #29374e; border-radius:6px; padding:11px; outline:none; font-size:12px; line-height:1.5; }
+.planner-input-panel textarea:focus,.planner-log-input:focus { border-color:#4b9d98; box-shadow:0 0 0 2px rgba(68,217,187,.08); }
+.planner-actions,.planner-form { display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+.planner-form input,.planner-form select { flex:1; min-width:125px; color:var(--text); background:#0d1624; border:1px solid #29374e; border-radius:6px; padding:10px 11px; outline:none; font-size:11px; }
+.planner-form input:focus,.planner-form select:focus { border-color:#4b9d98; }
+.planner-form button { flex-shrink:0; }
+.planner-input-panel button:disabled { opacity:.42; cursor:not-allowed; }
+.planner-task { display:flex; align-items:center; gap:10px; padding:12px 0; border-top:1px solid #202d40; }
+.planner-task:first-child { border-top:0; padding-top:0; }
+.planner-task-main { flex:1; min-width:0; }
+.planner-task-main b,.planner-task-main small { display:block; }
+.planner-task-main b { font-size:12px; }
+.planner-task-main small { color:#74839c; font:10px var(--mono); margin-top:4px; }
+.planner-priority { border-radius:100px; padding:4px 7px; font:9px var(--mono); color:#aebbd0; background:#243248; }
+.planner-priority.high { color:var(--amber); background:#352b19; }.planner-priority.low { color:#91a4bd; background:#1b2638; }
+.planner-complete { flex-shrink:0; }
+.planner-event,.planner-log { display:flex; gap:10px; align-items:flex-start; padding:10px 0; border-top:1px solid #202d40; font-size:11px; }
+.planner-event:first-child,.planner-log:first-child { border-top:0; padding-top:0; }
+.planner-event span,.planner-log span { width:94px; flex-shrink:0; color:#71809b; font:10px var(--mono); }
+.planner-event b,.planner-log b { font-weight:600; line-height:1.45; }
+.planner-log-button { margin-top:9px; }
+.planner-preview { margin-top:12px; padding:11px; border:1px solid #326e69; border-radius:7px; background:#102b2d; font-size:11px; }
+.planner-preview pre { max-height:220px; overflow:auto; white-space:pre-wrap; color:#b9eee4; font:10px/1.5 var(--mono); margin:9px 0; }
+.planner-preview .ghost-button { margin-left:6px; }
+@media (max-width:1200px) { .planner-grid { grid-template-columns:1fr; } }
