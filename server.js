@@ -361,6 +361,25 @@ function numberFrom(record, names) {
   return 0;
 }
 
+const TOKEN_FIELDS = {
+  total: ['payload.info.last_token_usage.total_tokens', 'total_tokens', 'totalTokens', 'usage.total_tokens', 'message.usage.total_tokens'],
+  input: ['input_tokens', 'inputTokens', 'usage.input_tokens', 'message.usage.input_tokens', 'payload.info.last_token_usage.input_tokens'],
+  output: ['output_tokens', 'outputTokens', 'usage.output_tokens', 'message.usage.output_tokens', 'payload.info.last_token_usage.output_tokens'],
+  cacheRead: ['cache_read_input_tokens', 'cached_input_tokens', 'usage.cache_read_input_tokens', 'usage.cached_input_tokens', 'message.usage.cache_read_input_tokens', 'message.usage.cached_input_tokens', 'payload.info.last_token_usage.cached_input_tokens'],
+  cacheWrite: ['cache_creation_input_tokens', 'cache_write_input_tokens', 'usage.cache_creation_input_tokens', 'usage.cache_write_input_tokens', 'message.usage.cache_creation_input_tokens', 'message.usage.cache_write_input_tokens', 'payload.info.last_token_usage.cache_write_input_tokens']
+};
+
+function tokenUsageFrom(record) {
+  const breakdown = {
+    input: numberFrom(record, TOKEN_FIELDS.input),
+    output: numberFrom(record, TOKEN_FIELDS.output),
+    cacheRead: numberFrom(record, TOKEN_FIELDS.cacheRead),
+    cacheWrite: numberFrom(record, TOKEN_FIELDS.cacheWrite)
+  };
+  const reportedTotal = numberFrom(record, TOKEN_FIELDS.total);
+  return { total: reportedTotal || Object.values(breakdown).reduce((sum, value) => sum + value, 0), breakdown };
+}
+
 function recordDate(record) {
   const value = record.timestamp || record.created_at || record.createdAt || record.time || record.date;
   const date = value ? new Date(value) : null;
@@ -437,6 +456,7 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
   let limitsAt = null;
   let todayTokens = 0;
   let monthTokens = 0;
+  const breakdown = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
   for (const file of files) {
     let currentModel = null;
@@ -457,11 +477,8 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
           limitsAt = snapshotAt;
         }
       }
-      const total =
-        numberFrom(record, ['payload.info.last_token_usage.total_tokens', 'total_tokens', 'totalTokens', 'usage.total_tokens', 'message.usage.total_tokens']) ||
-        numberFrom(record, ['input_tokens', 'inputTokens', 'usage.input_tokens', 'message.usage.input_tokens', 'payload.info.last_token_usage.input_tokens']) +
-        numberFrom(record, ['output_tokens', 'outputTokens', 'usage.output_tokens', 'message.usage.output_tokens', 'payload.info.last_token_usage.output_tokens']) +
-        numberFrom(record, ['cache_creation_input_tokens', 'cache_read_input_tokens', 'cached_input_tokens', 'cache_write_input_tokens', 'usage.cache_creation_input_tokens', 'usage.cache_read_input_tokens', 'payload.info.last_token_usage.cached_input_tokens', 'payload.info.last_token_usage.cache_write_input_tokens']);
+      const usage = tokenUsageFrom(record);
+      const total = usage.total;
       if (!total) continue;
 
       let fileDate = new Date();
@@ -470,7 +487,10 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
       const dayKey = dateKey(date);
       byDay.set(dayKey, (byDay.get(dayKey) || 0) + total);
       if (dayKey === todayKey) todayTokens += total;
-      if (dayKey.startsWith(monthKey)) monthTokens += total;
+      if (dayKey.startsWith(monthKey)) {
+        monthTokens += total;
+        for (const [key, value] of Object.entries(usage.breakdown)) breakdown[key] += value;
+      }
 
       const model = recordModel || modelBySession.get(currentSession) || currentModel;
       if (model) models.set(model, (models.get(model) || 0) + total);
@@ -492,6 +512,7 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
     sessions: sessions.size,
     source: files.length ? sourceName : 'missing',
     reset: 'local',
+    tokenBreakdown: breakdown,
     daily,
     models: Array.from(models.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, value], index) => ({
       name,
@@ -528,6 +549,11 @@ function getLocalUsage() {
   const codex = usageFromPath('local', codexPath, Number(process.env.CODEX_BUDGET_TOKENS || 4400000));
   const claude = usageFromPath('local', claudePath, Number(process.env.CLAUDE_BUDGET_TOKENS || 3600000));
   const daily = codex.daily.map((value, index) => value + (claude.daily[index] || 0));
+  const dailyDates = codex.daily.map((_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (13 - index));
+    return dateKey(date);
+  });
   const models = mergeModels([codex.models, claude.models]);
   for (const [provider, usage] of [['codex', codex], ['claude-code', claude]]) {
     const usedPercent = usage.limits?.primary?.usedPercent;
@@ -549,7 +575,16 @@ function getLocalUsage() {
       }
     }
   }
-  return { codex, claude, daily, models, fetchedAt: new Date().toISOString() };
+  return {
+    codex,
+    claude,
+    daily,
+    dailyByProvider: { codex: codex.daily, claude: claude.daily },
+    dailyDates,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'local',
+    models,
+    fetchedAt: new Date().toISOString()
+  };
 }
 
 function serveStatic(req, res) {

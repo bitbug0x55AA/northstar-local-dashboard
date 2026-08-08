@@ -8,6 +8,8 @@ const test = require('node:test');
 
 const root = path.resolve(__dirname, '..');
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'northstar-server-'));
+const codexUsagePath = path.join(directory, 'codex');
+const claudeUsagePath = path.join(directory, 'claude');
 const port = 46000 + Math.floor(Math.random() * 1000);
 let server;
 
@@ -43,6 +45,11 @@ async function waitForServer() {
 }
 
 test.before(async () => {
+  const now = new Date().toISOString();
+  fs.mkdirSync(codexUsagePath, { recursive: true });
+  fs.mkdirSync(claudeUsagePath, { recursive: true });
+  fs.writeFileSync(path.join(codexUsagePath, 'session.jsonl'), `${JSON.stringify({ timestamp: now, type: 'event_msg', payload: { session_id: 'codex-session', info: { last_token_usage: { total_tokens: 100 } } } })}\n`);
+  fs.writeFileSync(path.join(claudeUsagePath, 'session.jsonl'), `${JSON.stringify({ timestamp: now, type: 'assistant', sessionId: 'claude-session', message: { model: 'claude-test', usage: { input_tokens: 20, output_tokens: 30, cache_read_input_tokens: 400, cache_creation_input_tokens: 50 } } })}\n`);
   server = spawn(process.execPath, ['server.js'], {
     cwd: root,
     env: {
@@ -50,8 +57,8 @@ test.before(async () => {
       NORTHSTAR_LLM_URL: '', NORTHSTAR_LLM_MODEL: '',
       NORTHSTAR_PLANNER_DIR: path.join(directory, 'planner'),
       NORTHSTAR_OBSERVABILITY_PATH: path.join(directory, 'observability.json'),
-      CODEX_USAGE_PATH: path.join(directory, 'missing-codex'),
-      CLAUDE_USAGE_PATH: path.join(directory, 'missing-claude'),
+      CODEX_USAGE_PATH: codexUsagePath,
+      CLAUDE_USAGE_PATH: claudeUsagePath,
       NORTHSTAR_REPO_ROOTS: path.join(directory, 'empty')
     },
     stdio: ['ignore', 'pipe', 'pipe']
@@ -91,6 +98,19 @@ test('HTTP API serves the dashboard and protects state-changing endpoints', asyn
 
   const acknowledged = await request('PATCH', '/api/observability/events', { id: 'api-event', status: 'acknowledged' }, { Origin: localOrigin });
   assert.equal(acknowledged.body.event.status, 'acknowledged');
+});
+
+test('usage API includes Claude cache tokens and returns local-day metadata', async () => {
+  const usage = await request('GET', '/api/usage');
+  assert.equal(usage.status, 200);
+  assert.equal(usage.body.codex.monthTokens, 100);
+  assert.equal(usage.body.claude.monthTokens, 500, 'Claude cache read and creation tokens must be included');
+  assert.equal(usage.body.claude.tokenBreakdown.cacheRead, 400);
+  assert.equal(usage.body.claude.tokenBreakdown.cacheWrite, 50);
+  assert.equal(usage.body.dailyByProvider.codex.length, 14);
+  assert.equal(usage.body.dailyByProvider.claude.length, 14);
+  assert.equal(usage.body.dailyDates.length, 14);
+  assert.equal(typeof usage.body.timezone, 'string');
 });
 
 test('planner API is enabled but requires explicit confirmation for LLM changes', async () => {
