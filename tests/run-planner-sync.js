@@ -22,6 +22,7 @@ assert.equal(first.data.projects[0].sourceRef, 'github:signal-console');
 assert.equal(first.data.tasks[0].sourceRef, 'github:signal-console#241');
 assert.equal(first.data.tasks[0].status, 'in-progress');
 assert.equal(first.data.tasks[0].projectId, first.data.projects[0].id);
+assert.equal(first.data.tasks[0].category, 'GitHub 开源项目');
 
 const polished = syncGithubToPlanner({
   repos: [{
@@ -39,6 +40,7 @@ const polished = syncGithubToPlanner({
 assert.equal(polished.data.tasks[0].title, '#241 建立可执行的键盘快捷键方案');
 assert.equal(polished.data.tasks[0].notes, '整理命令面板快捷键并完成验证。');
 assert.equal(polished.data.tasks[0].sourcePolishVersion, 'github-polish-v3');
+assert.equal(polished.data.tasks[0].category, 'GitHub 开源项目');
 
 const second = syncGithubToPlanner(github);
 assert.equal(second.results.created, 0);
