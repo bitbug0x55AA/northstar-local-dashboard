@@ -28,7 +28,8 @@ assert.deepEqual(clarification.operations, []);
 assert.equal(clarification.needsConfirmation, true);
 assert.equal(clarification.clarification, 'Which project should this task belong to?');
 
-assert.throws(() => validateProposal({ operations: [{ type: 'delete_task', id: 'x' }] }), /Unsupported planner operation/);
+assert.throws(() => validateProposal({ operations: [{ type: 'delete_task', id: 'x' }] }), /LLM cannot delete/);
+assert.equal(validateOperations([{ type: 'delete_task', id: 'x' }], { source: 'manual' }).operations[0].type, 'delete_task');
 assert.throws(() => validateProposal({ operations: [{ type: 'create_task', title: 'Bad date', dueAt: 'YYYY-MM-DD' }] }), /placeholder date/);
 assert.throws(() => validateProposal({ operations: [{ type: 'create_task', title: 'x'.repeat(1001) }] }), /too long/);
 assert.throws(() => validateProposal({ operations: [], clarification: 'x'.repeat(501) }), /too long/);

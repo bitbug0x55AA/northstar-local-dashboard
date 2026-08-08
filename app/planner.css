@@ -46,6 +46,9 @@
 .planner-priority { border-radius:100px; padding:4px 7px; font:9px var(--mono); color:#aebbd0; background:#243248; }
 .planner-priority.high { color:var(--amber); background:#352b19; }.planner-priority.low { color:#91a4bd; background:#1b2638; }
 .planner-complete { flex-shrink:0; }
+.planner-edit,.planner-delete { flex-shrink:0; }
+.planner-delete { color:#ffaaa8; }
+.planner-delete:hover { color:#ffd1cf; }
 .planner-event,.planner-log { display:flex; gap:10px; align-items:flex-start; padding:10px 0; border-top:1px solid #202d40; font-size:11px; }
 .planner-event:first-child,.planner-log:first-child { border-top:0; padding-top:0; }
 .planner-event span,.planner-log span { width:94px; flex-shrink:0; color:#71809b; font:10px var(--mono); }

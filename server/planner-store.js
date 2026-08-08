@@ -156,6 +156,13 @@ function applyOperation(data, operation) {
     task.updatedAt = new Date().toISOString();
     return { type, item: task };
   }
+  if (type === 'delete_task') {
+    const id = required(operation.id, 'Task id');
+    const index = data.tasks.findIndex(entry => entry.id === id);
+    if (index < 0) throw new Error('Task was not found');
+    const [task] = data.tasks.splice(index, 1);
+    return { type, item: task };
+  }
   throw new Error(`Unsupported planner operation: ${type || 'unknown'}`);
 }
 

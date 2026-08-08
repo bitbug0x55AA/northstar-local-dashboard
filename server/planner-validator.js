@@ -72,6 +72,8 @@ function normalizeOperation(input, source) {
     if (output.projectId !== undefined) output.projectId = boundedText(output.projectId, 'Task projectId');
     if (output.sourceRef !== undefined) output.sourceRef = boundedText(output.sourceRef, 'Task sourceRef');
     if (!['title', 'notes', 'status', 'priority', 'dueAt', 'projectId'].some(key => key in output)) throw new Error('Task update has no editable fields');
+  } else if (type === 'delete_task') {
+    output.id = boundedText(output.id, 'Task id', true);
   }
 
   output.source = normalizedSource(output.source, source);
@@ -95,6 +97,7 @@ function validateProposal(proposal) {
     return { operations: [], needsConfirmation: true, clarification };
   }
   const normalized = validateOperations(proposal.operations, { source: 'llm' });
+  if (normalized.operations.some(operation => operation.type === 'delete_task')) throw new Error('LLM cannot delete Planner tasks');
   return { operations: normalized.operations, needsConfirmation: true, clarification };
 }
 
