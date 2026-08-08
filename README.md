@@ -1,6 +1,6 @@
 # Northstar Local Dashboard
 
-Windows 11 本地开发者控制台的第一版 MVP：集中查看 GitHub 项目进度，以及从本地导入 Codex / Claude Code 使用量。
+Windows 11 本地开发者控制台的第一版 MVP：集中查看 GitHub 项目进度，以及自动读取本机 Codex / Claude Code 使用量。
 
 ## 启动
 
@@ -23,7 +23,7 @@ npm start
 
 - GitHub：仓库概览、Issue、最近 Release、Issue 标签聚合的计划看板。
 - AI 使用量：Codex / Claude Code 的今日、本月、预算、session、近 14 日趋势与模型分布。
-- 设置：配置 GitHub owner、多个仓库和只读 token；粘贴 JSON 导入 AI usage。
+- 设置：配置 GitHub owner、多个仓库和只读 token；AI usage 由本机日志自动读取。
 - 本地优先：服务只监听 `127.0.0.1`，配置和用量数据保存在浏览器 localStorage，不写入代码仓库。
 
 ## GitHub Token 建议
@@ -39,23 +39,12 @@ npm start
 - 静态文件服务只开放 `/app/*`，不会把 `.git`、源码根目录文件、env 文件等作为静态资源暴露。
 - `.gitignore` 已忽略 `.env*`、日志、usage 导出、本地数据目录和 `*.local.json` / `*.private.json`。不要把真实 token 或原始 usage 日志写进源码文件。
 
-## Usage JSON 示例
+## AI Usage 数据源
 
-```json
-{
-  "codex": { "todayTokens": 184000, "monthTokens": 2960000, "budgetTokens": 4400000, "sessions": 17, "source": "local", "reset": "2d 14h" },
-  "claude": { "todayTokens": 127000, "monthTokens": 2180000, "budgetTokens": 3600000, "sessions": 12, "source": "local", "reset": "—" },
-  "daily": [36, 52, 44, 61, 48, 76, 68, 83, 70, 88, 64, 92, 74, 82],
-  "models": [
-    { "name": "Claude Sonnet", "value": 48, "color": "blue" },
-    { "name": "GPT-5-Codex", "value": 37, "color": "teal" },
-    { "name": "Claude Opus", "value": 15, "color": "amber" }
-  ]
-}
-```
+默认扫描 `%USERPROFILE%\.codex\sessions` 和 `%USERPROFILE%\.claude` 下的本地 JSON / JSONL 日志，并只保存汇总后的 token、session、模型分布、趋势和可见的 limit 快照。也可以在启动前通过 `CODEX_USAGE_PATH` / `CLAUDE_USAGE_PATH` 覆盖路径。
 
 ## 后续建议
 
 1. 增加 Windows 计划任务，每隔 15 分钟刷新并保存 GitHub 快照。
-2. 增加 Claude Code / Codex 本地日志解析器，把 JSON 导入变成自动采集。
+2. 增强 Claude Code subscription / API usage 数据源接入。
 3. 接入 GitHub Project V2 GraphQL，替换当前基于 Issue label 的轻量计划看板。
