@@ -22,6 +22,13 @@
           <button class="nav-item" data-view="usage"><span class="nav-icon">◌</span>AI Usage</button>
           <button class="nav-item" data-view="observability"><span class="nav-icon">⚠</span>Logs &amp; Audit</button>
           <button class="nav-item" data-view="settings"><span class="nav-icon">⚙</span>Settings</button>
+          <div class="nav-sublist" data-github-subnav hidden>
+            <button class="nav-subitem" data-github-subview="all">Overview</button>
+            <button class="nav-subitem" data-github-subview="releases">Releases</button>
+            <button class="nav-subitem" data-github-subview="roadmap">Planning Board</button>
+            <button class="nav-subitem" data-github-subview="ci">CI Status</button>
+            <button class="nav-subitem" data-github-subview="orchestrator">Merge Orchestrator</button>
+          </div>
         </nav>
         <div class="sidebar-bottom">
           <div class="sync-mini"><span class="pulse"></span><div><b id="syncLabel">Demo data</b><small id="syncTime">Waiting for sync</small></div></div>
@@ -44,6 +51,7 @@
     </div>
     <div id="toast" class="toast" role="status"></div>
     <script src="/app/app.js"></script>
+    <script src="/app/merge-orchestrator.js"></script>
     <script src="/app/observability.js"></script>
     <link rel="stylesheet" href="/app/planner.css" />
     <script src="/app/planner.js"></script>

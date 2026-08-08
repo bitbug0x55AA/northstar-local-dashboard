@@ -4,8 +4,9 @@ const path = require('path');
 const https = require('https');
 const { spawn } = require('child_process');
 const { readPlanner, applyOperations, syncGithubToPlanner } = require('./server/planner-store');
-const { interpretPlannerInput, polishGithubIssues } = require('./server/planner-llm');
+const { GITHUB_POLISH_VERSION, interpretPlannerInput, polishGithubIssues } = require('./server/planner-llm');
 const { recordEvent, listEvents, acknowledgeEvent, summarize } = require('./server/observability-store');
+const { analyzeMergeWorkspace, discoverWorkspaces } = require('./server/merge-orchestrator');
 
 const PORT = Number(process.env.PORT || 4173);
 const ROOT = __dirname;
@@ -530,19 +531,22 @@ function getLocalUsage() {
   const models = mergeModels([codex.models, claude.models]);
   for (const [provider, usage] of [['codex', codex], ['claude-code', claude]]) {
     const usedPercent = usage.limits?.primary?.usedPercent;
-    if (Number.isFinite(Number(usedPercent)) && usedPercent >= 80) {
-      const threshold = usedPercent >= 95 ? 95 : 80;
-      recordEvent({
-        id: `usage-${provider}-${threshold}-${dateKey(new Date())}`,
-        tab: 'usage',
-        level: usedPercent >= 95 ? 'critical' : 'warning',
-        source: provider,
-        eventType: 'quota_threshold',
-        message: `${provider === 'codex' ? 'Codex' : 'Claude Code'} usage reached ${Math.round(usedPercent)}% of its observed quota.`,
-        details: { usedPercent: Math.round(usedPercent), threshold, windowMinutes: usage.limits.primary.windowMinutes, resetsAt: usage.limits.primary.resetsAt },
-        status: 'open',
-        ruleId: `USAGE-QUOTA-${threshold}`
-      });
+    if (Number.isFinite(Number(usedPercent))) {
+      const reachedThresholds = [50, 80, 90].filter(threshold => usedPercent >= threshold);
+      for (const threshold of reachedThresholds) {
+        const level = threshold >= 90 ? 'critical' : 'warning';
+        recordEvent({
+          id: `usage-${provider}-${threshold}-${dateKey(new Date())}`,
+          tab: 'usage',
+          level,
+          source: provider,
+          eventType: 'quota_threshold',
+          message: `${provider === 'codex' ? 'Codex' : 'Claude Code'} usage reached the ${threshold}% quota threshold (${Math.round(usedPercent)}% used).`,
+          details: { usedPercent: Math.round(usedPercent), threshold, windowMinutes: usage.limits.primary.windowMinutes, resetsAt: usage.limits.primary.resetsAt },
+          status: 'open',
+          ruleId: `USAGE-QUOTA-${threshold}`
+        });
+      }
     }
   }
   return { codex, claude, daily, models, fetchedAt: new Date().toISOString() };
@@ -606,6 +610,16 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, await getGithubCi(body));
       return;
     }
+    if (req.method === 'POST' && req.url === '/api/merge-orchestrator/analyze') {
+      assertLocalOrigin(req);
+      const body = JSON.parse(await readBody(req) || '{}');
+      sendJson(res, 200, await analyzeMergeWorkspace(body));
+      return;
+    }
+    if (req.method === 'GET' && req.url === '/api/merge-orchestrator/workspaces') {
+      sendJson(res, 200, { workspaces: await discoverWorkspaces(), fetchedAt: new Date().toISOString() });
+      return;
+    }
     if (req.method === 'GET' && req.url === '/api/usage') {
       sendJson(res, 200, getLocalUsage());
       return;
@@ -657,25 +671,29 @@ const server = http.createServer(async (req, res) => {
         for (const issue of Array.isArray(repo.issues) ? repo.issues : []) {
           const sourceRef = `github:${String(repo.name || '').trim()}#${issue.number}`;
           const existing = known.get(sourceRef);
-          const needsPolish = !existing?.sourcePolishVersion || (llmAvailable && existing.sourcePolishVersion !== 'github-polish-v2');
+          const needsPolish = !existing?.sourcePolishVersion || (llmAvailable && (existing.sourcePolishVersion !== GITHUB_POLISH_VERSION || existing.sourceUpdatedAt !== issue.updatedAt));
           if (!existing || existing.sourceUpdatedAt !== issue.updatedAt || needsPolish) candidates.push({ ...issue, repo: repo.name });
         }
       }
       const polished = await polishGithubIssues(candidates, body.language);
       const polishedByRef = new Map(polished.items.map(item => [item.sourceRef, item]));
-      const polishVersion = polished.fallback ? 'github-raw-v2' : 'github-polish-v2';
+      const polishVersion = polished.fallback ? 'github-raw-v2' : GITHUB_POLISH_VERSION;
       const enriched = {
         ...github,
         repos: (github.repos || []).map(repo => ({
           ...repo,
           issues: (repo.issues || []).map(issue => {
             const item = polishedByRef.get(`github:${String(repo.name || '').trim()}#${issue.number}`);
-            return item ? { ...issue, plannerTitle: item.title, plannerNotes: item.notes, plannerCategory: item.category, plannerTags: item.tags, plannerPolishVersion: polishVersion } : issue;
+            const existing = known.get(`github:${String(repo.name || '').trim()}#${issue.number}`);
+            // Do not regress an already polished task to raw GitHub text when the
+            // local model is temporarily unavailable.
+            const keepExistingPolish = polished.fallback && existing?.sourcePolishVersion && existing.sourcePolishVersion !== 'github-raw-v2';
+            return item && !keepExistingPolish ? { ...issue, plannerTitle: item.title, plannerNotes: item.notes, plannerCategory: item.category, plannerTags: item.tags, plannerPolishVersion: polishVersion } : issue;
           })
         }))
       };
       const result = syncGithubToPlanner(enriched);
-      result.results = { ...result.results, polished: polished.used, polishFallback: polished.fallback };
+      result.results = { ...result.results, polished: polished.used, polishFallback: polished.fallback, polishError: polished.error || null };
       sendJson(res, 200, result);
       return;
     }

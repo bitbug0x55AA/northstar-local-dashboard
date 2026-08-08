@@ -5,6 +5,7 @@ const path = require('path');
 const { POLICY, validateProposal } = require('./planner-validator');
 
 const SYSTEM_PROMPT = fs.readFileSync(path.join(__dirname, 'planner-system-prompt.txt'), 'utf8').trim();
+const GITHUB_POLISH_VERSION = 'github-polish-v3';
 
 function requestJson(target, body, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
@@ -147,9 +148,9 @@ async function polishGithubIssues(issues, language = 'zh') {
       };
     });
     return { items, used: items.filter((item, index) => item.title !== fallback[index].title || item.notes !== fallback[index].notes || item.category !== fallback[index].category || JSON.stringify(item.tags) !== JSON.stringify(fallback[index].tags)).length, fallback: false };
-  } catch {
-    return { items: fallback, used: 0, fallback: true };
+  } catch (error) {
+    return { items: fallback, used: 0, fallback: true, error: error.message };
   }
 }
 
-module.exports = { interpretPlannerInput, polishGithubIssues };
+module.exports = { GITHUB_POLISH_VERSION, interpretPlannerInput, polishGithubIssues };

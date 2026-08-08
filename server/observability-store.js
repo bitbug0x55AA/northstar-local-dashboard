@@ -6,7 +6,6 @@ const DATA_FILE = process.env.NORTHSTAR_OBSERVABILITY_PATH || (HOME ? path.join(
 const MAX_EVENTS = 1000;
 
 const DEMO_EVENTS = [
-  { id: 'demo-usage-1', timestamp: new Date(Date.now() - 1000 * 60 * 18).toISOString(), tab: 'usage', level: 'warning', source: 'codex', eventType: 'quota_threshold', message: 'Codex usage is approaching the configured quota.', details: { usedPercent: 82, threshold: 80 }, status: 'open', ruleId: 'USAGE-QUOTA-80' },
   { id: 'demo-llm-1', timestamp: new Date(Date.now() - 1000 * 60 * 42).toISOString(), tab: 'llm', level: 'info', source: 'ollama', eventType: 'inference', message: 'Local LLM inference completed within the safety boundary.', details: { latencyMs: 842, model: 'local model' }, status: 'resolved', ruleId: null },
   { id: 'demo-debug-1', timestamp: new Date(Date.now() - 1000 * 60 * 76).toISOString(), tab: 'debug', level: 'info', source: 'northstar', eventType: 'startup', message: 'Observability store initialized.', details: {}, status: 'resolved', ruleId: null }
 ];

@@ -113,3 +113,11 @@ LLM proposals are marked with `source: "llm"`, always require explicit confirmat
 1. Add a Windows scheduled task or background helper for persistent sync outside the browser tab.
 2. Add optional Anthropic Admin API support for Claude API usage reporting.
 3. Add GitHub Project V2 GraphQL support to replace the current label-based planning board.
+
+## Merge Orchestrator
+
+The GitHub Projects area includes a nested Merge Orchestrator workspace. The workspace discovers local repositories under the configured/common project roots, then lets the user select a repository, target branch, and source branches from discovered Git refs. A manual path remains as a fallback when discovery is unavailable. The backend performs read-only Git inspection of commit ancestry, changed-file overlap, working-tree state, and a `git merge-tree --trivial-merge` preflight. If the local LLM is configured, it explains a suggested order using only those deterministic results.
+
+GitHub subpages are navigated from the expandable sidebar; the duplicate in-page GitHub tab strip is not used.
+
+The workspace never runs merge, rebase, commit, push, reset, or delete operations. Repository paths are used only as the working directory for fixed Git read commands, and the analysis result is not persisted to the repository.

@@ -23,11 +23,37 @@ assert.equal(first.data.tasks[0].sourceRef, 'github:signal-console#241');
 assert.equal(first.data.tasks[0].status, 'in-progress');
 assert.equal(first.data.tasks[0].projectId, first.data.projects[0].id);
 
+const polished = syncGithubToPlanner({
+  repos: [{
+    ...github.repos[0],
+    issues: [{
+      ...github.repos[0].issues[0],
+      plannerTitle: '#241 建立可执行的键盘快捷键方案',
+      plannerNotes: '整理命令面板快捷键并完成验证。',
+      plannerCategory: 'feature',
+      plannerTags: ['command-palette', 'ux'],
+      plannerPolishVersion: 'github-polish-v3'
+    }]
+  }]
+});
+assert.equal(polished.data.tasks[0].title, '#241 建立可执行的键盘快捷键方案');
+assert.equal(polished.data.tasks[0].notes, '整理命令面板快捷键并完成验证。');
+assert.equal(polished.data.tasks[0].sourcePolishVersion, 'github-polish-v3');
+
 const second = syncGithubToPlanner(github);
 assert.equal(second.results.created, 0);
 assert.equal(second.results.updated, 0);
 assert.equal(second.data.projects.length, 1);
 assert.equal(second.data.tasks.length, 1);
+
+const rawRefresh = syncGithubToPlanner({
+  repos: [{
+    ...github.repos[0],
+    issues: [{ ...github.repos[0].issues[0], updatedAt: '2026-08-09T05:42:00Z' }]
+  }]
+});
+assert.equal(rawRefresh.data.tasks[0].title, '#241 建立可执行的键盘快捷键方案');
+assert.equal(rawRefresh.data.tasks[0].sourcePolishVersion, 'github-polish-v3');
 
 const closed = syncGithubToPlanner({
   repos: [{ ...github.repos[0], issues: [], closedIssues: [{ number: 241, title: 'Add keyboard shortcuts' }] }]
