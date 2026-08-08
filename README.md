@@ -87,6 +87,17 @@ $env:NORTHSTAR_LLM_MODEL = 'qwen2.5:3b'
 
 The model only returns proposed Planner operations. The UI previews the operations and requires confirmation before saving them. The first implementation supports manual tasks and progress logs; event scheduling, project linking, and external calendar sync remain separate follow-up work.
 
+## Planner LLM Safety Boundary
+
+Planner LLM output is treated as untrusted input. The behavior contract is versioned in:
+
+- `server/planner-policy.json`: allowed operations, limits, and confirmation rules.
+- `server/planner-system-prompt.txt`: local-model instructions.
+- `server/planner-validator.js`: server-side schema validation and field sanitization.
+- `tests/run-planner-policy.js`: regression checks for unsafe and malformed proposals.
+
+LLM proposals are marked with `source: "llm"`, always require explicit confirmation, and cannot write through the Planner API without `confirmed: true`. The connection test only parses a fixed prompt and never saves data.
+
 ## Roadmap
 
 1. Add a Windows scheduled task or background helper for persistent sync outside the browser tab.

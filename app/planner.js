@@ -93,8 +93,8 @@
     if (testButton) { testButton.disabled = !llmState.configured || llmState.testing; testButton.textContent = llmState.testing ? tr('\u6d4b\u8bd5\u4e2d...', 'Testing...') : tr('\u6d4b\u8bd5\u672c\u5730 LLM', 'Test Local LLM'); }
   }
 
-  async function apply(operations) {
-    const result = await request('/api/planner/operations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operations }) });
+  async function apply(operations, confirmed = false) {
+    const result = await request('/api/planner/operations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operations, confirmed }) });
     data = result.data;
     render();
   }
@@ -137,8 +137,10 @@
     preview.innerHTML = `<div class="planner-preview">${tr('\u6b63\u5728\u8bf7\u6c42\u672c\u5730\u6a21\u578b...', 'Requesting the local model...')}</div>`;
     try {
       const result = await request('/api/planner/interpret', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ input }) });
-      preview.innerHTML = `<div class="planner-preview"><b>${tr('\u89e3\u6790\u7ed3\u679c', 'Parsed result')}</b><pre>${escapeHtml(JSON.stringify(result.operations, null, 2))}</pre><button class="primary-button" id="plannerConfirm">${tr('\u786e\u8ba4\u5199\u5165', 'Confirm and save')}</button><button class="ghost-button" id="plannerCancel">${tr('\u53d6\u6d88', 'Cancel')}</button></div>`;
-      document.querySelector('#plannerConfirm').addEventListener('click', async () => { try { await apply(result.operations); } catch (error) { showError(error.message); } });
+      const clarification = result.clarification ? `<div class="planner-clarification">${escapeHtml(result.clarification)}</div>` : '';
+      const confirm = result.operations.length ? `<button class="primary-button" id="plannerConfirm">${tr('\u786e\u8ba4\u5199\u5165', 'Confirm and save')}</button>` : '';
+      preview.innerHTML = `<div class="planner-preview"><b>${tr('\u89e3\u6790\u7ed3\u679c', 'Parsed result')}</b>${clarification}<pre>${escapeHtml(JSON.stringify(result.operations, null, 2))}</pre>${confirm}<button class="ghost-button" id="plannerCancel">${tr('\u53d6\u6d88', 'Cancel')}</button></div>`;
+      document.querySelector('#plannerConfirm')?.addEventListener('click', async () => { try { await apply(result.operations, true); } catch (error) { showError(error.message); } });
       document.querySelector('#plannerCancel').addEventListener('click', () => { preview.innerHTML = ''; });
     } catch (error) { showError(error.message); }
   }

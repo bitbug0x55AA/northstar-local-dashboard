@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
+const { validateOperations } = require('./planner-validator');
 
 const HOME = process.env.USERPROFILE || process.env.HOME || '';
 const DEFAULT_DIR = process.platform === 'win32' && HOME
@@ -154,12 +155,13 @@ function applyOperation(data, operation) {
   throw new Error(`Unsupported planner operation: ${type || 'unknown'}`);
 }
 
-function applyOperations(operations) {
-  if (!Array.isArray(operations) || operations.length < 1 || operations.length > 20) {
-    throw new Error('Planner operations must contain between 1 and 20 items');
+function applyOperations(operations, options = {}) {
+  const validation = validateOperations(operations, { source: 'manual' });
+  if (validation.operations.some(operation => operation.source === 'llm') && options.confirmed !== true) {
+    throw new Error('LLM planner changes require explicit confirmation');
   }
   const data = readPlanner();
-  const results = operations.map(operation => applyOperation(data, operation));
+  const results = validation.operations.map(operation => applyOperation(data, operation));
   return { data: writePlanner(data), results };
 }
 

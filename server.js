@@ -560,7 +560,7 @@ const server = http.createServer(async (req, res) => {
     if (PLANNER_ENABLED && req.method === 'POST' && req.url === '/api/planner/operations') {
       assertLocalOrigin(req);
       const body = JSON.parse(await readBody(req) || '{}');
-      sendJson(res, 200, applyOperations(body.operations));
+      sendJson(res, 200, applyOperations(body.operations, { confirmed: body.confirmed === true }));
       return;
     }
     if (PLANNER_ENABLED && req.method === 'POST' && req.url === '/api/planner/interpret') {
