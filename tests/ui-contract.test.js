@@ -23,10 +23,22 @@ test('core dashboard language switch has bidirectional labels and Chinese fallba
   assert.match(app, /document\.documentElement\.lang=isEnglish\(\)\?'en':'zh-CN'/, 'the document language must track the selected language');
 });
 
+test('observability UI has a bilingual rendering contract', () => {
+  const observability = sources.find(source => source.name === 'observability.js').content;
+  assert.match(observability, /const tr = \(zh, en\) => document\.documentElement\.lang === 'en' \? en : zh/, 'observability must use the selected document language');
+  for (const [zh, en] of [
+    ['日志与审计', 'Logs & Audit'], ['事件总数', 'Total Events'], ['未处理告警', 'Open Alerts'],
+    ['如何阅读这些日志', 'How to read these logs'], ['刷新', 'Refresh'], ['没有事件符合这些筛选条件。', 'No events match these filters.']
+  ]) {
+    assert.ok(observability.includes(`tr('${zh}', '${en}')`), `missing observability translation pair: ${zh} / ${en}`);
+  }
+  assert.doesNotMatch(observability, /<h1>Logs & Audit<|>↻ Refresh<|>Total Events</u, 'observability UI text must not bypass the translator');
+});
+
 test('every rendered button has an explicit interaction contract', () => {
   const buttonTags = sources.flatMap(source => source.content.match(/<button\b[^>]*>/g) || []);
   assert.ok(buttonTags.length >= 30, 'expected the full dashboard button surface to be scanned');
-  const handledDataAttributes = ['data-view', 'data-github-subview', 'data-github-view', 'data-go', 'data-planner-tab', 'data-obs-tab'];
+  const handledDataAttributes = ['data-view', 'data-github-subview', 'data-github-view', 'data-go', 'data-planner-tab', 'data-planner-sidepage', 'data-obs-tab'];
   const handledClasses = ['ci-check', 'planner-complete', 'planner-edit', 'planner-delete', 'planner-remove-category', 'obs-action'];
 
   for (const button of buttonTags) {

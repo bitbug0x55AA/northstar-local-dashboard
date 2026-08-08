@@ -10,6 +10,7 @@ const DEFAULT_DIR = process.platform === 'win32' && HOME
 const DATA_DIR = process.env.NORTHSTAR_PLANNER_DIR || DEFAULT_DIR;
 const DATA_FILE = path.join(DATA_DIR, 'planner-data.json');
 const BACKUP_FILE = path.join(DATA_DIR, 'planner-data.json.bak');
+const GITHUB_CATEGORY = 'GitHub 开源项目';
 
 function emptyPlanner() {
   return {
@@ -32,7 +33,7 @@ function readPlanner() {
   if (!fs.existsSync(DATA_FILE)) return emptyPlanner();
   try {
     const parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-    return {
+    const data = {
       ...emptyPlanner(),
       ...parsed,
       schemaVersion: 1,
@@ -43,6 +44,14 @@ function readPlanner() {
       progressLogs: Array.isArray(parsed.progressLogs) ? parsed.progressLogs : [],
       categories: Array.isArray(parsed.categories) ? parsed.categories.map(item => asText(item)).filter(Boolean).slice(0, 30) : emptyPlanner().categories
     };
+    const seenGithubRefs = new Set();
+    data.tasks = data.tasks.filter(task => {
+      if (task.source !== 'github') return true;
+      task.category = GITHUB_CATEGORY;
+      if (!task.sourceRef || !seenGithubRefs.has(task.sourceRef)) { seenGithubRefs.add(task.sourceRef); return true; }
+      return false;
+    });
+    return data;
   } catch (error) {
     const parseError = new Error('Planner data could not be read');
     parseError.cause = error;
@@ -259,7 +268,7 @@ function syncGithubToPlanner(githubData) {
         sourceRef,
         sourceUpdatedAt: asText(issue.updatedAt) || null,
         sourcePolishVersion: hasPolishPayload ? (asText(issue.plannerPolishVersion) || 'github-raw-v2') : (existing?.sourcePolishVersion || 'github-raw-v2'),
-        category: hasPolishPayload ? (asText(issue.plannerCategory) || 'general') : (existing?.category || 'general'),
+        category: GITHUB_CATEGORY,
         tags: hasPolishPayload ? (Array.isArray(issue.plannerTags) ? issue.plannerTags : []) : (existing?.tags || []),
         parentId: project.id
       };

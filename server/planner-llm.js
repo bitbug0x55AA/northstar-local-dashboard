@@ -106,7 +106,7 @@ function rawGithubPolish(issue) {
     sourceRef: githubIssueRef(issue.repo, issue.number),
     title: `#${issue.number} ${String(issue.title || '').trim()}`.slice(0, 1000),
     notes: [`GitHub: ${issue.repo}`, issue.url ? `URL: ${issue.url}` : '', labels ? `Labels: ${labels}` : ''].filter(Boolean).join('\n').slice(0, 1000),
-    category: labels || 'general',
+    category: 'GitHub 开源项目',
     tags: (issue.labels || []).slice(0, 6)
   };
 }
@@ -135,7 +135,7 @@ async function polishGithubIssues(issues, language = 'zh') {
     'Keep exactly one output item for each input sourceRef. Never invent facts, dates, priorities, status, IDs, or repository names.',
     'The title should be a clear, action-oriented task title, preserving the issue number prefix.',
     'The notes should be a concise 1-2 sentence execution-oriented summary, no more than 240 characters, followed by the original GitHub URL and labels when present.',
-    'Use category for a short grouping such as architecture, bugfix, feature, security, testing, documentation, maintenance, or research.',
+    'Always set category to GitHub 开源项目. Use tags, not categories, for architecture, bugfix, feature, maintenance, or other issue types.',
     'Extract 2-5 useful tags for technology, domain, stage, or risk. Do not invent tags unsupported by the issue.',
     `Write the polished text in ${language === 'en' ? 'English' : 'Simplified Chinese'}, while keeping code names and issue numbers unchanged.`
   ].join('\n');

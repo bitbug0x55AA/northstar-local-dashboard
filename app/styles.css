@@ -82,6 +82,9 @@ button { cursor:pointer; }
 .nav-subitem.active { color:var(--teal); background:#132e31; }
 .github-nav-toggle::after { content:'⌄'; float:right; color:#71819a; font-size:12px; }
 .github-nav-toggle[aria-expanded='false']::after { content:'›'; }
+.planner-nav-toggle::after { content:'⌄'; float:right; color:#71819a; font-size:12px; }
+.planner-nav-toggle[aria-expanded='false']::after { content:'›'; }
+.nav-subitem span { float:right; margin-left:8px; color:#778ba3; font:9px var(--mono); }
 .merge-page .page-heading { margin-bottom:25px; }
 .merge-grid { display:grid; grid-template-columns:minmax(320px,.8fr) minmax(0,1.6fr); gap:17px; align-items:start; }
 .merge-field { margin:13px 0; }
