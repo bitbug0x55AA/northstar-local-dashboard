@@ -130,7 +130,7 @@ async function fetchRepo(config) {
     id: repo.id,
     name: repo.name,
     fullName: repo.full_name,
-    description: repo.description || '暂无描述',
+    description: repo.description || 'No description',
     url: repo.html_url,
     stars: repo.stargazers_count,
     forks: repo.forks_count,
@@ -166,7 +166,7 @@ async function getGithub(body) {
   const token = String(body.token || '').trim();
   const owner = String(body.owner || '').trim();
   const repos = Array.isArray(body.repos) ? body.repos : [];
-  if (!owner || !repos.length) throw new Error('请至少配置 GitHub owner 和一个仓库');
+  if (!owner || !repos.length) throw new Error('Configure a GitHub owner and at least one repository');
   const result = [];
   const errors = [];
   for (const repo of repos.slice(0, 12)) {
@@ -190,7 +190,7 @@ async function getGithubCi(body) {
   const owner = String(body.owner || '').trim();
   const repo = String(body.repo || '').trim();
   const runId = String(body.runId || '').trim();
-  if (!owner || !repo || !runId) throw new Error('需要 owner、repo 和 runId');
+  if (!owner || !repo || !runId) throw new Error('owner, repo, and runId are required');
   const encoded = `${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
   const jobsData = await githubRequest({ route: `/repos/${encoded}/actions/runs/${encodeURIComponent(runId)}/jobs?per_page=100`, token });
   const jobs = (jobsData.jobs || []).map(job => ({
@@ -216,7 +216,7 @@ async function getGithubCi(body) {
       const logText = await githubTextRequest({ route: `/repos/${encoded}/actions/jobs/${job.id}/logs`, token });
       job.logHighlights = extractLogHighlights(logText);
     } catch (error) {
-      job.logHighlights = [`无法读取 job logs: ${error.message}`];
+      job.logHighlights = [`Unable to read job logs: ${error.message}`];
     }
   }
   return { owner, repo, runId, jobs, failedJobs, fetchedAt: new Date().toISOString() };

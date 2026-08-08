@@ -1,50 +1,66 @@
 # Northstar Local Dashboard
 
-Windows 11 本地开发者控制台的第一版 MVP：集中查看 GitHub 项目进度，以及自动读取本机 Codex / Claude Code 使用量。
+Northstar is a local Windows 11 developer dashboard for monitoring GitHub project activity, CI status, and local Codex / Claude Code usage.
 
-## 启动
+## Start
 
-需要 Node.js 16+。在 PowerShell 中运行：
+Requires Node.js 16 or newer. In PowerShell:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\start-windows.ps1
 ```
 
-或：
+Or:
 
 ```powershell
 npm start
 ```
 
-然后打开 `http://127.0.0.1:4173`。
+Then open `http://127.0.0.1:4173`.
 
-## 当前功能
+## Current Features
 
-- GitHub：仓库概览、Issue、最近 Release、Issue 标签聚合的计划看板。
-- AI 使用量：Codex / Claude Code 的今日、本月、预算、session、近 14 日趋势与模型分布。
-- 设置：配置 GitHub owner、多个仓库和只读 token；AI usage 由本机日志自动读取。
-- 本地优先：服务只监听 `127.0.0.1`，配置和用量数据保存在浏览器 localStorage，不写入代码仓库。
+- GitHub: repository overview, issues, recent releases, latest GitHub Actions CI status, failed-job inspection, and an issue-label planning board.
+- AI usage: local Codex / Claude Code usage, today and month totals, sessions, 14-day trend, model distribution, and visible subscription-limit snapshots.
+- Settings: display name, UI language, GitHub owner, repository list, and optional read-only GitHub token.
+- Local-first operation: the server listens only on `127.0.0.1`; settings and usage summaries are stored in browser `localStorage` and are not written to the repository.
 
-## GitHub Token 建议
+## GitHub Token Recommendation
 
-公开仓库可以留空 Token。私有仓库请使用 fine-grained Personal Access Token，并只授予 Metadata、Issues、Contents 的 Read 权限。
+Public repositories can usually be monitored without a token. For private repositories, use a fine-grained Personal Access Token with read-only permissions:
 
-## Privacy / 开源仓库注意事项
+- Metadata: Read
+- Issues: Read
+- Contents: Read
+- Actions: Read
 
-- 服务只监听 `127.0.0.1`，不会绑定公网地址。
-- GitHub 配置、token、usage 汇总结果保存在浏览器 `localStorage`，不会写入仓库文件。
-- 自动同步只会把 GitHub owner/repo/token 发给本机 `/api/github`，再由本机服务请求 GitHub API；AI usage 不会上传到 GitHub。
-- `/api/usage` 只返回汇总后的 token、session、模型占比和趋势，不返回本机 `.codex` / `.claude` 路径或原始日志内容。
-- 静态文件服务只开放 `/app/*`，不会把 `.git`、源码根目录文件、env 文件等作为静态资源暴露。
-- `.gitignore` 已忽略 `.env*`、日志、usage 导出、本地数据目录和 `*.local.json` / `*.private.json`。不要把真实 token 或原始 usage 日志写进源码文件。
+## Privacy Notes For Open Source Use
 
-## AI Usage 数据源
+- The server listens only on `127.0.0.1` and does not bind to a public network interface.
+- GitHub configuration, tokens, and usage summaries are stored in browser `localStorage`; they are not written to repository files.
+- Automatic sync sends GitHub owner, repository names, and token only to the local `/api/github` endpoint. The local service then calls the GitHub API.
+- AI usage is read from local logs and is not uploaded to GitHub.
+- `/api/usage` returns only aggregated tokens, sessions, model distribution, trends, and visible limit snapshots. It does not return local `.codex` / `.claude` paths or raw log content.
+- Static file serving is restricted to `/app/*`; repository root files, `.git`, and env files are not exposed as static assets.
+- `.gitignore` excludes `.env*`, logs, usage exports, local data directories, `*.local.json`, and `*.private.json`. Do not put real tokens or raw usage logs into source files.
 
-默认扫描 `%USERPROFILE%\.codex\sessions` 和 `%USERPROFILE%\.claude` 下的本地 JSON / JSONL 日志，并只保存汇总后的 token、session、模型分布、趋势和可见的 limit 快照。也可以在启动前通过 `CODEX_USAGE_PATH` / `CLAUDE_USAGE_PATH` 覆盖路径。
+## AI Usage Data Sources
 
-## 后续建议
+By default, Northstar scans local JSON / JSONL logs under:
 
-1. 增加 Windows 计划任务，每隔 15 分钟刷新并保存 GitHub 快照。
-2. 增强 Claude Code subscription / API usage 数据源接入。
-3. 接入 GitHub Project V2 GraphQL，替换当前基于 Issue label 的轻量计划看板。
+- `%USERPROFILE%\.codex\sessions`
+- `%USERPROFILE%\.claude`
+
+Only aggregated usage data is stored. You can override the default paths before startup with:
+
+- `CODEX_USAGE_PATH`
+- `CLAUDE_USAGE_PATH`
+
+Codex subscription-limit information is read from local Codex rate-limit snapshots when available. Claude Code subscription limits are shown only if local logs expose equivalent data.
+
+## Roadmap
+
+1. Add a Windows scheduled task or background helper for persistent sync outside the browser tab.
+2. Add optional Anthropic Admin API support for Claude API usage reporting.
+3. Add GitHub Project V2 GraphQL support to replace the current label-based planning board.
