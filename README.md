@@ -61,6 +61,46 @@ Only aggregated usage data is stored. You can override the default paths before 
 
 Codex subscription-limit information is read from local Codex rate-limit snapshots when available. Claude Code subscription limits are shown only if local logs expose equivalent data.
 
+## Personal Planner Feature Preview
+
+The Planner is intentionally isolated behind an environment flag. To run this branch with the Planner enabled:
+
+```powershell
+$env:NORTHSTAR_PLANNER_ENABLED = 'true'
+.\start-windows.ps1
+```
+
+For the local Ollama setup, use the simpler feature-specific launcher. It enables Planner, starts the local Ollama API when needed, and supplies the default model settings:
+
+```powershell
+.\start-windows.ps1 -Planner
+```
+
+Planner data is stored separately under `%APPDATA%\Northstar\planner` by default. Set `NORTHSTAR_PLANNER_DIR` to use another local directory. The Planner API uses `/api/planner/*` and does not modify GitHub or AI usage data.
+
+Natural-language interpretation is optional. Configure an OpenAI-compatible local model endpoint and model name before starting:
+
+```powershell
+$env:NORTHSTAR_LLM_URL = 'http://127.0.0.1:11434/api/chat'
+$env:NORTHSTAR_LLM_MODEL = 'qwen2.5:3b'
+$env:NORTHSTAR_LLM_KEEP_ALIVE = '5m'
+```
+
+The model only returns proposed Planner operations. The UI previews the operations and requires confirmation before saving them. The first implementation supports manual tasks and progress logs; event scheduling, project linking, and external calendar sync remain separate follow-up work.
+
+When started with `.\start-windows.ps1 -Planner`, Northstar records whether it started Ollama itself. Closing the dashboard stops only that Ollama process; an Ollama instance that was already running before Northstar is left untouched. `NORTHSTAR_LLM_KEEP_ALIVE` controls how long the Ollama model remains loaded after an inference request; the default is `5m`. This affects model memory residency, not the Ollama service process itself.
+
+## Planner LLM Safety Boundary
+
+Planner LLM output is treated as untrusted input. The behavior contract is versioned in:
+
+- `server/planner-policy.json`: allowed operations, limits, and confirmation rules.
+- `server/planner-system-prompt.txt`: local-model instructions.
+- `server/planner-validator.js`: server-side schema validation and field sanitization.
+- `tests/run-planner-policy.js`: regression checks for unsafe and malformed proposals.
+
+LLM proposals are marked with `source: "llm"`, always require explicit confirmation, and cannot write through the Planner API without `confirmed: true`. The connection test only parses a fixed prompt and never saves data.
+
 ## Roadmap
 
 1. Add a Windows scheduled task or background helper for persistent sync outside the browser tab.

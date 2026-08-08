@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const { spawn } = require('child_process');
+const { readPlanner, applyOperations } = require('./server/planner-store');
+const { interpretPlannerInput } = require('./server/planner-llm');
 
 const PORT = Number(process.env.PORT || 4173);
 const ROOT = __dirname;
@@ -10,6 +12,7 @@ const HOME = process.env.USERPROFILE || process.env.HOME || '';
 const LOCAL_ORIGINS = new Set([`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`]);
 const CREDENTIAL_DIR = process.platform === 'win32' && HOME ? path.join(HOME, 'AppData', 'Roaming', 'Northstar') : '';
 const CREDENTIAL_FILE = CREDENTIAL_DIR ? path.join(CREDENTIAL_DIR, 'github-token.dpapi') : '';
+const PLANNER_ENABLED = process.env.NORTHSTAR_PLANNER_ENABLED === 'true';
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -115,6 +118,19 @@ async function readGithubToken() {
 
 function deleteGithubToken() {
   if (CREDENTIAL_FILE && fs.existsSync(CREDENTIAL_FILE)) fs.unlinkSync(CREDENTIAL_FILE);
+}
+
+function stopManagedOllama() {
+  if (process.platform !== 'win32' || process.env.NORTHSTAR_OLLAMA_MANAGED !== 'true') return Promise.resolve();
+  const pid = Number(process.env.NORTHSTAR_OLLAMA_PID || 0);
+  if (!Number.isInteger(pid) || pid <= 0) return Promise.resolve();
+  return new Promise(resolve => {
+    const escapedPid = String(pid);
+    const script = `$p=Get-Process -Id ${escapedPid} -ErrorAction SilentlyContinue; if($p -and $p.ProcessName -eq 'ollama'){Stop-Process -Id ${escapedPid} -Force}`;
+    const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true });
+    child.on('error', resolve);
+    child.on('close', resolve);
+  });
 }
 
 function githubTextRequest({ route, token, redirects = 2 }) {
@@ -506,6 +522,16 @@ function serveStatic(req, res) {
   fs.createReadStream(filePath).pipe(res);
 }
 
+let shutdownStarted = false;
+function shutdownNorthstar() {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  server.close(async () => {
+    await stopManagedOllama();
+    process.exit(0);
+  });
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && req.url === '/api/health') {
@@ -543,10 +569,46 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, getLocalUsage());
       return;
     }
+    if (req.method === 'GET' && req.url === '/api/planner/status') {
+      sendJson(res, 200, {
+        enabled: PLANNER_ENABLED,
+        llmConfigured: Boolean(process.env.NORTHSTAR_LLM_URL && process.env.NORTHSTAR_LLM_MODEL)
+      });
+      return;
+    }
+    if (PLANNER_ENABLED && req.method === 'GET' && req.url === '/api/planner') {
+      sendJson(res, 200, readPlanner());
+      return;
+    }
+    if (PLANNER_ENABLED && req.method === 'POST' && req.url === '/api/planner/operations') {
+      assertLocalOrigin(req);
+      const body = JSON.parse(await readBody(req) || '{}');
+      sendJson(res, 200, applyOperations(body.operations, { confirmed: body.confirmed === true }));
+      return;
+    }
+    if (PLANNER_ENABLED && req.method === 'POST' && req.url === '/api/planner/interpret') {
+      assertLocalOrigin(req);
+      const body = JSON.parse(await readBody(req) || '{}');
+      if (!String(body.input || '').trim()) throw new Error('Planner input is required');
+      sendJson(res, 200, await interpretPlannerInput(body.input));
+      return;
+    }
+    if (PLANNER_ENABLED && req.method === 'POST' && req.url === '/api/planner/llm-test') {
+      assertLocalOrigin(req);
+      const startedAt = Date.now();
+      const result = await interpretPlannerInput('测试连接：请记录“完成本地 LLM 接入测试”，不要创建日程。');
+      sendJson(res, 200, {
+        ok: true,
+        model: process.env.NORTHSTAR_LLM_MODEL || null,
+        latencyMs: Date.now() - startedAt,
+        result
+      });
+      return;
+    }
     if (req.method === 'POST' && req.url === '/api/shutdown') {
       assertLocalOrigin(req);
       sendJson(res, 200, { ok: true, message: 'Northstar is shutting down.' });
-      setTimeout(() => server.close(() => process.exit(0)), 100);
+      setTimeout(shutdownNorthstar, 100);
       return;
     }
     serveStatic(req, res);
@@ -554,6 +616,9 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, error.statusCode || 400, { error: error.message || 'Unknown error' });
   }
 });
+
+process.on('SIGINT', shutdownNorthstar);
+process.on('SIGTERM', shutdownNorthstar);
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Northstar dashboard running at http://127.0.0.1:${PORT}`);
