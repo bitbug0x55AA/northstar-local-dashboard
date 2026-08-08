@@ -193,11 +193,21 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
   const byDay = new Map();
   const models = new Map();
   const sessions = new Set();
+  const modelBySession = new Map();
   let todayTokens = 0;
   let monthTokens = 0;
 
   for (const file of files) {
+    let currentModel = null;
+    let currentSession = file;
     for (const record of readJsonRecords(file)) {
+      const recordModel = record.model || record.modelName || record.message?.model || record.payload?.model || record.payload?.thread_settings?.model || record.payload?.collaboration_mode?.settings?.model;
+      const session = record.session_id || record.sessionId || record.conversation_id || record.conversationId || record.payload?.session_id || file;
+      currentSession = session || currentSession;
+      if (recordModel) {
+        currentModel = recordModel;
+        modelBySession.set(currentSession, recordModel);
+      }
       const total =
         numberFrom(record, ['payload.info.last_token_usage.total_tokens', 'total_tokens', 'totalTokens', 'usage.total_tokens', 'message.usage.total_tokens']) ||
         numberFrom(record, ['input_tokens', 'inputTokens', 'usage.input_tokens', 'message.usage.input_tokens', 'payload.info.last_token_usage.input_tokens']) +
@@ -213,10 +223,9 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
       if (dayKey === todayKey) todayTokens += total;
       if (dayKey.startsWith(monthKey)) monthTokens += total;
 
-      const model = record.model || record.modelName || record.message?.model || record.payload?.model || record.payload?.thread_settings?.model;
+      const model = recordModel || modelBySession.get(currentSession) || currentModel;
       if (model) models.set(model, (models.get(model) || 0) + total);
-      const session = record.session_id || record.sessionId || record.conversation_id || record.conversationId || file;
-      sessions.add(session);
+      sessions.add(currentSession);
     }
   }
 
@@ -238,9 +247,29 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
     models: Array.from(models.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, value], index) => ({
       name,
       value: modelTotal ? Math.round(value / modelTotal * 100) : 0,
+      tokens: value,
       color: colors[index % colors.length]
     }))
   };
+}
+
+function mergeModels(groups) {
+  const totals = new Map();
+  for (const group of groups) {
+    for (const model of group || []) {
+      const tokens = Number(model.tokens || 0);
+      if (!tokens) continue;
+      totals.set(model.name, (totals.get(model.name) || 0) + tokens);
+    }
+  }
+  const grandTotal = Array.from(totals.values()).reduce((sum, value) => sum + value, 0);
+  const colors = ['teal', 'blue', 'amber'];
+  return Array.from(totals.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, tokens], index) => ({
+    name,
+    value: grandTotal ? Math.round(tokens / grandTotal * 100) : 0,
+    tokens,
+    color: colors[index % colors.length]
+  }));
 }
 
 function getLocalUsage() {
@@ -249,7 +278,7 @@ function getLocalUsage() {
   const codex = usageFromPath('local', codexPath, Number(process.env.CODEX_BUDGET_TOKENS || 4400000));
   const claude = usageFromPath('local', claudePath, Number(process.env.CLAUDE_BUDGET_TOKENS || 3600000));
   const daily = codex.daily.map((value, index) => value + (claude.daily[index] || 0));
-  const models = [...codex.models, ...claude.models].slice(0, 5);
+  const models = mergeModels([codex.models, claude.models]);
   return { codex, claude, daily, models, fetchedAt: new Date().toISOString() };
 }
 
