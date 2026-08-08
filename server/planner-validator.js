@@ -48,6 +48,9 @@ function normalizeOperation(input, source) {
     output.dueAt = normalizeDate(output.dueAt, 'Task dueAt');
     output.projectId = boundedText(output.projectId, 'Task projectId');
     output.sourceRef = boundedText(output.sourceRef, 'Task sourceRef');
+    output.category = boundedText(output.category, 'Task category', false, 80);
+    output.tags = Array.isArray(output.tags) ? output.tags.filter(tag => typeof tag === 'string').map(tag => tag.trim()).filter(Boolean).slice(0, 8) : [];
+    output.parentId = boundedText(output.parentId, 'Task parentId');
   } else if (type === 'create_event') {
     output.title = boundedText(output.title, 'Event title', true);
     output.notes = boundedText(output.notes, 'Event notes');
@@ -71,7 +74,10 @@ function normalizeOperation(input, source) {
     if (output.dueAt !== undefined) output.dueAt = normalizeDate(output.dueAt, 'Task dueAt');
     if (output.projectId !== undefined) output.projectId = boundedText(output.projectId, 'Task projectId');
     if (output.sourceRef !== undefined) output.sourceRef = boundedText(output.sourceRef, 'Task sourceRef');
-    if (!['title', 'notes', 'status', 'priority', 'dueAt', 'projectId'].some(key => key in output)) throw new Error('Task update has no editable fields');
+    if (output.category !== undefined) output.category = boundedText(output.category, 'Task category', false, 80);
+    if (output.tags !== undefined) output.tags = Array.isArray(output.tags) ? output.tags.filter(tag => typeof tag === 'string').map(tag => tag.trim()).filter(Boolean).slice(0, 8) : [];
+    if (output.parentId !== undefined) output.parentId = boundedText(output.parentId, 'Task parentId');
+    if (!['title', 'notes', 'status', 'priority', 'dueAt', 'projectId', 'category', 'tags', 'parentId'].some(key => key in output)) throw new Error('Task update has no editable fields');
   } else if (type === 'delete_task') {
     output.id = boundedText(output.id, 'Task id', true);
   }

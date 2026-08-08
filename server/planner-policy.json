@@ -5,10 +5,10 @@
   "maxTextChars": 1000,
   "maxClarificationChars": 500,
   "allowedOperations": {
-    "create_task": ["title", "notes", "status", "priority", "dueAt", "projectId", "source", "sourceRef"],
+    "create_task": ["title", "notes", "status", "priority", "dueAt", "projectId", "source", "sourceRef", "category", "tags", "parentId"],
     "create_event": ["title", "notes", "startAt", "endAt", "source"],
     "log_progress": ["content", "projectId", "occurredAt", "source"],
-    "update_task": ["id", "title", "notes", "status", "priority", "dueAt", "projectId", "source", "sourceRef"],
+    "update_task": ["id", "title", "notes", "status", "priority", "dueAt", "projectId", "source", "sourceRef", "category", "tags", "parentId"],
     "delete_task": ["id"]
   },
   "allowedStatuses": ["planned", "in-progress", "done", "cancelled"],
