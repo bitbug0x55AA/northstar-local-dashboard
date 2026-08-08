@@ -30,4 +30,18 @@ button { cursor:pointer; }
 .heading-actions { display:flex; align-items:center; gap:10px; }
 .danger-button { border:1px solid #70424b; color:#ffd6d6; background:#2a1720; border-radius:6px; padding:9px 13px; font-size:11px; }
 .danger-button:hover { border-color:var(--red); color:white; }
+.ci-card { display:flex; align-items:center; gap:10px; border-top:1px solid #202d40; border-bottom:1px solid #202d40; padding:12px 0; margin:12px 0; }
+.ci-card b,.ci-card small { display:block; }
+.ci-card small { color:#73829b; font:10px var(--mono); margin-top:4px; }
+.ci-card a { margin-left:auto; color:var(--teal); text-decoration:none; font:10px var(--mono); }
+.ci-status { border-radius:100px; padding:4px 7px; font:9px var(--mono); background:#253248; color:#aab9cb; }
+.ci-status.good { background:#12342f; color:var(--teal); }
+.ci-status.warn { background:#352b19; color:var(--amber); }
+.ci-status.bad { background:#3a1d29; color:var(--red); }
+.ci-log { margin:9px 0 12px; padding:10px; background:#0c1421; border:1px solid #263449; border-radius:6px; }
+.ci-log b,.ci-log small,.ci-log code { display:block; }
+.ci-log b { font-size:11px; margin-bottom:7px; }
+.ci-log small { color:#aab9cb; font-size:10px; margin:4px 0; }
+.ci-log code { color:#ffcbc7; background:#201723; border-radius:4px; padding:5px 6px; margin:4px 0; font:10px/1.45 var(--mono); white-space:pre-wrap; overflow-wrap:anywhere; }
+.ci-log a { display:inline-block; margin-top:7px; color:var(--teal); text-decoration:none; font:10px var(--mono); }
 

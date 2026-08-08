@@ -61,13 +61,59 @@ function githubRequest({ method = 'GET', route, token, body }) {
   });
 }
 
+function githubTextRequest({ route, token, redirects = 2 }) {
+  return new Promise((resolve, reject) => {
+    const request = https.request({
+      hostname: 'api.github.com',
+      path: route,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Northstar-Local-Dashboard',
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      }
+    }, response => {
+      if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location && redirects > 0) {
+        const target = new URL(response.headers.location);
+        const follow = https.request(target, followResponse => {
+          let data = '';
+          followResponse.on('data', chunk => { data += chunk; });
+          followResponse.on('end', () => resolve(data));
+        });
+        follow.on('error', reject);
+        follow.end();
+        return;
+      }
+      let data = '';
+      response.on('data', chunk => { data += chunk; });
+      response.on('end', () => {
+        if (response.statusCode >= 400) {
+          reject(new Error(`GitHub logs returned ${response.statusCode}`));
+          return;
+        }
+        resolve(data);
+      });
+    });
+    request.on('error', reject);
+    request.end();
+  });
+}
+
+function extractLogHighlights(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  const matches = lines.filter(line => /(::error|error:|failed|failure|exception|traceback|npm err!|exit code|process completed with exit code)/i.test(line));
+  return (matches.length ? matches : lines.slice(-30)).slice(-40).map(line => line.slice(0, 500));
+}
+
 async function fetchRepo(config) {
   const encoded = `${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}`;
-  const [repo, releases, openIssues, closedIssues] = await Promise.all([
+  const [repo, releases, openIssues, closedIssues, runs] = await Promise.all([
     githubRequest({ route: `/repos/${encoded}`, token: config.token }),
     githubRequest({ route: `/repos/${encoded}/releases?per_page=5`, token: config.token }),
     githubRequest({ route: `/repos/${encoded}/issues?state=open&per_page=30&sort=updated`, token: config.token }),
-    githubRequest({ route: `/repos/${encoded}/issues?state=closed&per_page=20&sort=updated`, token: config.token })
+    githubRequest({ route: `/repos/${encoded}/issues?state=closed&per_page=20&sort=updated`, token: config.token }),
+    githubRequest({ route: `/repos/${encoded}/actions/runs?per_page=1`, token: config.token }).catch(error => ({ workflow_runs: [], error: error.message }))
   ]);
   const mapIssue = item => ({
     number: item.number,
@@ -92,6 +138,18 @@ async function fetchRepo(config) {
     updatedAt: repo.updated_at,
     defaultBranch: repo.default_branch,
     openIssues: repo.open_issues_count,
+    latestCi: (runs.workflow_runs || [])[0] ? {
+      id: runs.workflow_runs[0].id,
+      name: runs.workflow_runs[0].name,
+      event: runs.workflow_runs[0].event,
+      status: runs.workflow_runs[0].status,
+      conclusion: runs.workflow_runs[0].conclusion,
+      branch: runs.workflow_runs[0].head_branch,
+      sha: runs.workflow_runs[0].head_sha,
+      url: runs.workflow_runs[0].html_url,
+      createdAt: runs.workflow_runs[0].created_at,
+      updatedAt: runs.workflow_runs[0].updated_at
+    } : null,
     issues: openIssues.filter(item => !item.pull_request).map(mapIssue),
     closedIssues: closedIssues.filter(item => !item.pull_request).map(mapIssue),
     releases: releases.map(item => ({
@@ -125,6 +183,43 @@ function sendJson(res, status, data) {
   const body = JSON.stringify(data);
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(body);
+}
+
+async function getGithubCi(body) {
+  const token = String(body.token || '').trim();
+  const owner = String(body.owner || '').trim();
+  const repo = String(body.repo || '').trim();
+  const runId = String(body.runId || '').trim();
+  if (!owner || !repo || !runId) throw new Error('需要 owner、repo 和 runId');
+  const encoded = `${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+  const jobsData = await githubRequest({ route: `/repos/${encoded}/actions/runs/${encodeURIComponent(runId)}/jobs?per_page=100`, token });
+  const jobs = (jobsData.jobs || []).map(job => ({
+    id: job.id,
+    name: job.name,
+    status: job.status,
+    conclusion: job.conclusion,
+    startedAt: job.started_at,
+    completedAt: job.completed_at,
+    url: job.html_url,
+    failedSteps: (job.steps || []).filter(step => ['failure', 'cancelled', 'timed_out'].includes(step.conclusion)).map(step => ({
+      name: step.name,
+      number: step.number,
+      status: step.status,
+      conclusion: step.conclusion,
+      startedAt: step.started_at,
+      completedAt: step.completed_at
+    }))
+  }));
+  const failedJobs = jobs.filter(job => ['failure', 'cancelled', 'timed_out'].includes(job.conclusion));
+  for (const job of failedJobs.slice(0, 3)) {
+    try {
+      const logText = await githubTextRequest({ route: `/repos/${encoded}/actions/jobs/${job.id}/logs`, token });
+      job.logHighlights = extractLogHighlights(logText);
+    } catch (error) {
+      job.logHighlights = [`无法读取 job logs: ${error.message}`];
+    }
+  }
+  return { owner, repo, runId, jobs, failedJobs, fetchedAt: new Date().toISOString() };
 }
 
 function listJsonFiles(targetPath, limit = 600) {
@@ -344,6 +439,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && req.url === '/api/github') {
       const body = JSON.parse(await readBody(req) || '{}');
       sendJson(res, 200, await getGithub(body));
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/api/github-ci') {
+      const body = JSON.parse(await readBody(req) || '{}');
+      sendJson(res, 200, await getGithubCi(body));
       return;
     }
     if (req.method === 'GET' && req.url === '/api/usage') {
