@@ -120,6 +120,19 @@ function deleteGithubToken() {
   if (CREDENTIAL_FILE && fs.existsSync(CREDENTIAL_FILE)) fs.unlinkSync(CREDENTIAL_FILE);
 }
 
+function stopManagedOllama() {
+  if (process.platform !== 'win32' || process.env.NORTHSTAR_OLLAMA_MANAGED !== 'true') return Promise.resolve();
+  const pid = Number(process.env.NORTHSTAR_OLLAMA_PID || 0);
+  if (!Number.isInteger(pid) || pid <= 0) return Promise.resolve();
+  return new Promise(resolve => {
+    const escapedPid = String(pid);
+    const script = `$p=Get-Process -Id ${escapedPid} -ErrorAction SilentlyContinue; if($p -and $p.ProcessName -eq 'ollama'){Stop-Process -Id ${escapedPid} -Force}`;
+    const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true });
+    child.on('error', resolve);
+    child.on('close', resolve);
+  });
+}
+
 function githubTextRequest({ route, token, redirects = 2 }) {
   return new Promise((resolve, reject) => {
     const request = https.request({
@@ -509,6 +522,16 @@ function serveStatic(req, res) {
   fs.createReadStream(filePath).pipe(res);
 }
 
+let shutdownStarted = false;
+function shutdownNorthstar() {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  server.close(async () => {
+    await stopManagedOllama();
+    process.exit(0);
+  });
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && req.url === '/api/health') {
@@ -585,7 +608,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && req.url === '/api/shutdown') {
       assertLocalOrigin(req);
       sendJson(res, 200, { ok: true, message: 'Northstar is shutting down.' });
-      setTimeout(() => server.close(() => process.exit(0)), 100);
+      setTimeout(shutdownNorthstar, 100);
       return;
     }
     serveStatic(req, res);
@@ -593,6 +616,9 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, error.statusCode || 400, { error: error.message || 'Unknown error' });
   }
 });
+
+process.on('SIGINT', shutdownNorthstar);
+process.on('SIGTERM', shutdownNorthstar);
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Northstar dashboard running at http://127.0.0.1:${PORT}`);

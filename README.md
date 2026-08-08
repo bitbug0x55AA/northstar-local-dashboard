@@ -83,9 +83,12 @@ Natural-language interpretation is optional. Configure an OpenAI-compatible loca
 ```powershell
 $env:NORTHSTAR_LLM_URL = 'http://127.0.0.1:11434/api/chat'
 $env:NORTHSTAR_LLM_MODEL = 'qwen2.5:3b'
+$env:NORTHSTAR_LLM_KEEP_ALIVE = '5m'
 ```
 
 The model only returns proposed Planner operations. The UI previews the operations and requires confirmation before saving them. The first implementation supports manual tasks and progress logs; event scheduling, project linking, and external calendar sync remain separate follow-up work.
+
+When started with `.\start-windows.ps1 -Planner`, Northstar records whether it started Ollama itself. Closing the dashboard stops only that Ollama process; an Ollama instance that was already running before Northstar is left untouched. `NORTHSTAR_LLM_KEEP_ALIVE` controls how long the Ollama model remains loaded after an inference request; the default is `5m`. This affects model memory residency, not the Ollama service process itself.
 
 ## Planner LLM Safety Boundary
 

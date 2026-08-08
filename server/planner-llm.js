@@ -71,6 +71,7 @@ async function interpretPlannerInput(input) {
     model,
     stream: false,
     format: 'json',
+    keep_alive: process.env.NORTHSTAR_LLM_KEEP_ALIVE || '5m',
     messages
   } : {
     model,
