@@ -47,6 +47,7 @@ function normalizeOperation(input, source) {
     output.priority = POLICY.allowedPriorities.includes(output.priority) ? output.priority : 'medium';
     output.dueAt = normalizeDate(output.dueAt, 'Task dueAt');
     output.projectId = boundedText(output.projectId, 'Task projectId');
+    output.sourceRef = boundedText(output.sourceRef, 'Task sourceRef');
   } else if (type === 'create_event') {
     output.title = boundedText(output.title, 'Event title', true);
     output.notes = boundedText(output.notes, 'Event notes');
@@ -69,6 +70,7 @@ function normalizeOperation(input, source) {
     }
     if (output.dueAt !== undefined) output.dueAt = normalizeDate(output.dueAt, 'Task dueAt');
     if (output.projectId !== undefined) output.projectId = boundedText(output.projectId, 'Task projectId');
+    if (output.sourceRef !== undefined) output.sourceRef = boundedText(output.sourceRef, 'Task sourceRef');
     if (!['title', 'notes', 'status', 'priority', 'dueAt', 'projectId'].some(key => key in output)) throw new Error('Task update has no editable fields');
   }
 

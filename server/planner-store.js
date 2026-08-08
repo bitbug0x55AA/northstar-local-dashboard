@@ -93,6 +93,8 @@ function createTask(data, operation) {
     dueAt: isoDate(operation.dueAt, 'Task dueAt'),
     projectId: asText(operation.projectId) || null,
     source: asText(operation.source) || 'manual',
+    sourceRef: asText(operation.sourceRef) || null,
+    sourceUpdatedAt: asText(operation.sourceUpdatedAt) || null,
     createdAt: now,
     updatedAt: now
   };
@@ -140,19 +142,90 @@ function applyOperation(data, operation) {
   }
   if (type === 'update_task') {
     const task = findById(data.tasks, required(operation.id, 'Task id'), 'Task');
-    const allowed = ['title', 'notes', 'status', 'priority', 'projectId', 'dueAt'];
+    const allowed = ['title', 'notes', 'status', 'priority', 'projectId', 'dueAt', 'sourceRef'];
     for (const key of allowed) {
       if (!(key in operation)) continue;
       if (key === 'title') task.title = required(operation[key], 'Task title');
       else if (key === 'status' && !['planned', 'in-progress', 'done', 'cancelled'].includes(operation[key])) throw new Error('Task status is invalid');
       else if (key === 'priority' && !['low', 'medium', 'high'].includes(operation[key])) throw new Error('Task priority is invalid');
       else if (key === 'dueAt') task.dueAt = isoDate(operation[key], 'Task dueAt');
+      else if (key === 'sourceRef') task.sourceRef = asText(operation[key]) || null;
       else task[key] = asText(operation[key]) || null;
     }
     task.updatedAt = new Date().toISOString();
     return { type, item: task };
   }
   throw new Error(`Unsupported planner operation: ${type || 'unknown'}`);
+}
+
+function githubIssueRef(repo, number) {
+  return `github:${String(repo || '').trim()}#${number}`;
+}
+
+function githubIssueStatus(issue) {
+  const labels = (issue.labels || []).map(label => String(label).toLowerCase());
+  return labels.some(label => ['in-progress', 'in progress', 'doing'].includes(label)) ? 'in-progress' : 'planned';
+}
+
+function githubIssuePriority(issue) {
+  const labels = (issue.labels || []).map(label => String(label).toLowerCase());
+  if (labels.some(label => ['urgent', 'critical', 'blocker'].includes(label))) return 'high';
+  if (labels.includes('low')) return 'low';
+  return 'medium';
+}
+
+function githubIssueNotes(repo, issue) {
+  const labels = (issue.labels || []).join(', ');
+  return [`GitHub: ${repo}`, issue.url ? `URL: ${issue.url}` : '', labels ? `Labels: ${labels}` : ''].filter(Boolean).join('\n');
+}
+
+function syncGithubToPlanner(githubData) {
+  const data = readPlanner();
+  const repos = Array.isArray(githubData?.repos) ? githubData.repos : [];
+  const githubTasks = data.tasks.filter(task => task.source === 'github' && task.sourceRef);
+  const byRef = new Map(githubTasks.map(task => [task.sourceRef, task]));
+  const results = { created: 0, updated: 0, completed: 0, skipped: 0 };
+  const now = new Date().toISOString();
+
+  for (const repo of repos) {
+    const repoName = asText(repo.name);
+    if (!repoName) continue;
+    for (const issue of Array.isArray(repo.issues) ? repo.issues : []) {
+      if (!issue || issue.number == null || !asText(issue.title)) { results.skipped += 1; continue; }
+      const sourceRef = githubIssueRef(repoName, issue.number);
+      const fields = {
+        title: asText(issue.plannerTitle) || `#${issue.number} ${asText(issue.title)}`,
+        notes: asText(issue.plannerNotes) || githubIssueNotes(repoName, issue),
+        status: githubIssueStatus(issue),
+        priority: githubIssuePriority(issue),
+        source: 'github',
+        sourceRef,
+        sourceUpdatedAt: asText(issue.updatedAt) || null
+      };
+      const existing = byRef.get(sourceRef);
+      if (existing) {
+        if (existing.sourceUpdatedAt && existing.sourceUpdatedAt === fields.sourceUpdatedAt) continue;
+        Object.assign(existing, fields, { updatedAt: now });
+        results.updated += 1;
+      } else {
+        const task = createTask(data, fields);
+        byRef.set(sourceRef, task);
+        results.created += 1;
+      }
+    }
+
+    for (const issue of Array.isArray(repo.closedIssues) ? repo.closedIssues : []) {
+      if (!issue || issue.number == null) continue;
+      const existing = byRef.get(githubIssueRef(repoName, issue.number));
+      if (existing && existing.status !== 'done') {
+        existing.status = 'done';
+        existing.updatedAt = now;
+        results.completed += 1;
+      }
+    }
+  }
+
+  return { data: writePlanner(data), results };
 }
 
 function applyOperations(operations, options = {}) {
@@ -168,5 +241,6 @@ function applyOperations(operations, options = {}) {
 module.exports = {
   DATA_FILE,
   readPlanner,
-  applyOperations
+  applyOperations,
+  syncGithubToPlanner
 };
