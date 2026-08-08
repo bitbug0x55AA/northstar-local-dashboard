@@ -591,23 +591,27 @@ const server = http.createServer(async (req, res) => {
       const body = JSON.parse(await readBody(req) || '{}');
       const github = body.github || {};
       const current = readPlanner();
-      const known = new Map(current.tasks.filter(task => task.source === 'github' && task.sourceRef).map(task => [task.sourceRef, task.sourceUpdatedAt]));
+      const llmAvailable = Boolean(process.env.NORTHSTAR_LLM_URL && process.env.NORTHSTAR_LLM_MODEL);
+      const known = new Map(current.tasks.filter(task => task.source === 'github' && task.sourceRef).map(task => [task.sourceRef, task]));
       const candidates = [];
       for (const repo of Array.isArray(github.repos) ? github.repos : []) {
         for (const issue of Array.isArray(repo.issues) ? repo.issues : []) {
           const sourceRef = `github:${String(repo.name || '').trim()}#${issue.number}`;
-          if (!known.has(sourceRef) || known.get(sourceRef) !== issue.updatedAt) candidates.push({ ...issue, repo: repo.name });
+          const existing = known.get(sourceRef);
+          const needsPolish = !existing?.sourcePolishVersion || (llmAvailable && existing.sourcePolishVersion !== 'github-polish-v1');
+          if (!existing || existing.sourceUpdatedAt !== issue.updatedAt || needsPolish) candidates.push({ ...issue, repo: repo.name });
         }
       }
       const polished = await polishGithubIssues(candidates, body.language);
       const polishedByRef = new Map(polished.items.map(item => [item.sourceRef, item]));
+      const polishVersion = polished.fallback ? 'github-raw-v1' : 'github-polish-v1';
       const enriched = {
         ...github,
         repos: (github.repos || []).map(repo => ({
           ...repo,
           issues: (repo.issues || []).map(issue => {
             const item = polishedByRef.get(`github:${String(repo.name || '').trim()}#${issue.number}`);
-            return item ? { ...issue, plannerTitle: item.title, plannerNotes: item.notes } : issue;
+            return item ? { ...issue, plannerTitle: item.title, plannerNotes: item.notes, plannerPolishVersion: polishVersion } : issue;
           })
         }))
       };

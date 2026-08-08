@@ -95,6 +95,7 @@ function createTask(data, operation) {
     source: asText(operation.source) || 'manual',
     sourceRef: asText(operation.sourceRef) || null,
     sourceUpdatedAt: asText(operation.sourceUpdatedAt) || null,
+    sourcePolishVersion: asText(operation.sourcePolishVersion) || null,
     createdAt: now,
     updatedAt: now
   };
@@ -179,32 +180,61 @@ function githubIssueNotes(repo, issue) {
   return [`GitHub: ${repo}`, issue.url ? `URL: ${issue.url}` : '', labels ? `Labels: ${labels}` : ''].filter(Boolean).join('\n');
 }
 
+function ensureGithubProject(data, repo) {
+  const sourceRef = `github:${asText(repo.name)}`;
+  let project = data.projects.find(item => item.source === 'github' && item.sourceRef === sourceRef);
+  const now = new Date().toISOString();
+  if (!project) {
+    project = {
+      id: randomUUID(), type: 'project', name: asText(repo.name), description: asText(repo.description),
+      status: 'active', source: 'github', sourceRef, url: asText(repo.url) || null,
+      createdAt: now, updatedAt: now
+    };
+    data.projects.unshift(project);
+    return { project, created: true };
+  }
+  Object.assign(project, {
+    name: asText(repo.name) || project.name,
+    description: asText(repo.description) || project.description,
+    url: asText(repo.url) || project.url || null,
+    updatedAt: now
+  });
+  return { project, created: false };
+}
+
 function syncGithubToPlanner(githubData) {
   const data = readPlanner();
   const repos = Array.isArray(githubData?.repos) ? githubData.repos : [];
   const githubTasks = data.tasks.filter(task => task.source === 'github' && task.sourceRef);
   const byRef = new Map(githubTasks.map(task => [task.sourceRef, task]));
-  const results = { created: 0, updated: 0, completed: 0, skipped: 0 };
+  const results = { projectsCreated: 0, projectsUpdated: 0, created: 0, updated: 0, completed: 0, skipped: 0 };
   const now = new Date().toISOString();
 
   for (const repo of repos) {
     const repoName = asText(repo.name);
     if (!repoName) continue;
+    const projectResult = ensureGithubProject(data, repo);
+    if (projectResult.created) results.projectsCreated += 1;
+    else results.projectsUpdated += 1;
+    const project = projectResult.project;
     for (const issue of Array.isArray(repo.issues) ? repo.issues : []) {
       if (!issue || issue.number == null || !asText(issue.title)) { results.skipped += 1; continue; }
       const sourceRef = githubIssueRef(repoName, issue.number);
+      const existing = byRef.get(sourceRef);
+      const hasPolishPayload = Object.prototype.hasOwnProperty.call(issue, 'plannerPolishVersion');
       const fields = {
-        title: asText(issue.plannerTitle) || `#${issue.number} ${asText(issue.title)}`,
-        notes: asText(issue.plannerNotes) || githubIssueNotes(repoName, issue),
+        title: hasPolishPayload ? (asText(issue.plannerTitle) || `#${issue.number} ${asText(issue.title)}`) : (existing?.title || `#${issue.number} ${asText(issue.title)}`),
+        notes: hasPolishPayload ? (asText(issue.plannerNotes) || githubIssueNotes(repoName, issue)) : (existing?.notes || githubIssueNotes(repoName, issue)),
         status: githubIssueStatus(issue),
         priority: githubIssuePriority(issue),
+        projectId: project.id,
         source: 'github',
         sourceRef,
-        sourceUpdatedAt: asText(issue.updatedAt) || null
+        sourceUpdatedAt: asText(issue.updatedAt) || null,
+        sourcePolishVersion: hasPolishPayload ? (asText(issue.plannerPolishVersion) || 'github-raw-v1') : (existing?.sourcePolishVersion || 'github-raw-v1')
       };
-      const existing = byRef.get(sourceRef);
       if (existing) {
-        if (existing.sourceUpdatedAt && existing.sourceUpdatedAt === fields.sourceUpdatedAt) continue;
+        if (existing.sourceUpdatedAt && existing.sourceUpdatedAt === fields.sourceUpdatedAt && existing.sourcePolishVersion === fields.sourcePolishVersion && existing.projectId === project.id) continue;
         Object.assign(existing, fields, { updatedAt: now });
         results.updated += 1;
       } else {
@@ -219,6 +249,7 @@ function syncGithubToPlanner(githubData) {
       const existing = byRef.get(githubIssueRef(repoName, issue.number));
       if (existing && existing.status !== 'done') {
         existing.status = 'done';
+        existing.projectId = project.id;
         existing.updatedAt = now;
         results.completed += 1;
       }

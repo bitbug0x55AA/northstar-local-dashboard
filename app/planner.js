@@ -33,6 +33,7 @@
     const todayTasks = activeTasks.filter(task => task.dueAt && task.dueAt.slice(0, 10) === todayKey());
     const recentLogs = (data.progressLogs || []).slice(0, 6);
     const githubTaskCount = data.tasks.filter(task => task.source === 'github').length;
+    const projects = data.projects || [];
     view.innerHTML = `
       <div class="page-heading planner-heading">
         <div><div class="eyebrow">PERSONAL OPERATING SYSTEM</div><h1>${tr('\u4e2a\u4eba\u5de5\u4f5c\u8ba1\u5212', 'Personal Planner')}</h1><p>${tr('\u672c\u5730\u4efb\u52a1\u3001\u8fdb\u5ea6\u65e5\u5fd7\u548c\u53ef\u9009\u7684\u81ea\u7136\u8bed\u8a00\u6574\u7406\u5165\u53e3\u3002', 'Local tasks, progress logs, and an optional natural-language planning assistant.')}</p></div>
@@ -49,6 +50,7 @@
         <div class="metric-card"><div class="metric-label">${tr('\u5f85\u5904\u7406', 'Pending')}</div><div class="metric-value">${activeTasks.length}</div><div class="metric-foot">${tr('\u4e0d\u542b\u5df2\u5b8c\u6210\u4e8b\u9879', 'Excludes completed items')}</div></div>
         <div class="metric-card"><div class="metric-label">${tr('\u8fdb\u5ea6\u8bb0\u5f55', 'Progress Logs')}</div><div class="metric-value">${data.progressLogs.length}</div><div class="metric-foot">${tr('\u672c\u5730\u7ef4\u62a4', 'Stored locally')}</div></div>
       </div>
+      <div class="panel planner-projects-panel"><div class="panel-header"><div><div class="panel-title">${tr('\u8ba1\u5212\u9879\u76ee', 'Planner projects')}</div><div class="panel-subtitle">${tr('\u4ece GitHub \u4ed3\u5e93\u81ea\u52a8\u5efa\u7acb\u5e76\u4e0e Issue \u5173\u8054\u3002', 'Repositories synced from GitHub and linked to their Issues.')}</div></div><span class="source-pill"><i></i>${projects.length} ${tr('\u4e2a\u9879\u76ee', 'PROJECTS')}</span></div><div class="planner-project-list">${projects.map(project => { const count = data.tasks.filter(task => task.projectId === project.id).length; const active = data.tasks.filter(task => task.projectId === project.id && !['done', 'cancelled'].includes(task.status)).length; return `<div class="planner-project-row"><div class="planner-project-mark">⌘</div><div class="planner-project-main"><b>${escapeHtml(project.name)}</b><small>${escapeHtml(project.description || tr('\u6765\u81ea GitHub \u7684\u9879\u76ee', 'GitHub-linked project'))}</small></div><span>${active}/${count} ${tr('\u9879\u6d3b\u8dc3', 'active')}</span></div>`; }).join('') || `<div class="empty">${tr('\u6682\u65e0\u81ea\u52a8\u8054\u52a8\u7684 GitHub \u9879\u76ee', 'No GitHub-linked projects yet')}</div>`}</div></div>
       <div class="planner-grid planner-output-grid">
         <div class="planner-output-main">
           <div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('\u5f53\u524d\u4efb\u52a1', 'Current tasks')}</div><div class="panel-subtitle">${tr('\u4f18\u5148\u5904\u7406\u8fd9\u4e9b\u53ef\u6267\u884c\u4e8b\u9879\u3002', 'The next actionable items in your plan.')}</div></div><span class="source-pill"><i></i>${activeTasks.length} ${tr('\u9879\u5f85\u529e', 'TO DO')}</span></div><div id="plannerTasks">${renderTasks(activeTasks)}</div></div>

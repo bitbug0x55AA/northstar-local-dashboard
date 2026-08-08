@@ -17,12 +17,16 @@ const github = {
 
 const first = syncGithubToPlanner(github);
 assert.equal(first.results.created, 1);
+assert.equal(first.results.projectsCreated, 1);
+assert.equal(first.data.projects[0].sourceRef, 'github:signal-console');
 assert.equal(first.data.tasks[0].sourceRef, 'github:signal-console#241');
 assert.equal(first.data.tasks[0].status, 'in-progress');
+assert.equal(first.data.tasks[0].projectId, first.data.projects[0].id);
 
 const second = syncGithubToPlanner(github);
 assert.equal(second.results.created, 0);
 assert.equal(second.results.updated, 0);
+assert.equal(second.data.projects.length, 1);
 assert.equal(second.data.tasks.length, 1);
 
 const closed = syncGithubToPlanner({
