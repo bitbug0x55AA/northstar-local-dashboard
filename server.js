@@ -90,7 +90,7 @@ function runPowerShell(script, environment = {}) {
 async function protectGithubToken(token) {
   if (!CREDENTIAL_FILE) throw new Error('Windows DPAPI credential storage is unavailable');
   const encoded = await runPowerShell(
-    "$bytes=[Text.Encoding]::UTF8.GetBytes($env:NORTHSTAR_TOKEN); $protected=[Security.Cryptography.ProtectedData]::Protect($bytes,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser); [Convert]::ToBase64String($protected)",
+    "Add-Type -AssemblyName System.Security; $bytes=[Text.Encoding]::UTF8.GetBytes($env:NORTHSTAR_TOKEN); $protected=[Security.Cryptography.ProtectedData]::Protect($bytes,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser); [Convert]::ToBase64String($protected)",
     { NORTHSTAR_TOKEN: token }
   );
   fs.mkdirSync(CREDENTIAL_DIR, { recursive: true });
@@ -108,7 +108,7 @@ async function readGithubToken() {
   const encoded = fs.readFileSync(CREDENTIAL_FILE, 'ascii').trim();
   if (!encoded) return '';
   return runPowerShell(
-    "$protected=[Convert]::FromBase64String($env:NORTHSTAR_PROTECTED_TOKEN); $bytes=[Security.Cryptography.ProtectedData]::Unprotect($protected,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser); [Text.Encoding]::UTF8.GetString($bytes)",
+    "Add-Type -AssemblyName System.Security; $protected=[Convert]::FromBase64String($env:NORTHSTAR_PROTECTED_TOKEN); $bytes=[Security.Cryptography.ProtectedData]::Unprotect($protected,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser); [Text.Encoding]::UTF8.GetString($bytes)",
     { NORTHSTAR_PROTECTED_TOKEN: encoded }
   );
 }
