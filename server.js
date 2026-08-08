@@ -63,11 +63,22 @@ function githubRequest({ method = 'GET', route, token, body }) {
 
 async function fetchRepo(config) {
   const encoded = `${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}`;
-  const [repo, releases, issues] = await Promise.all([
+  const [repo, releases, openIssues, closedIssues] = await Promise.all([
     githubRequest({ route: `/repos/${encoded}`, token: config.token }),
     githubRequest({ route: `/repos/${encoded}/releases?per_page=5`, token: config.token }),
-    githubRequest({ route: `/repos/${encoded}/issues?state=open&per_page=20&sort=updated`, token: config.token })
+    githubRequest({ route: `/repos/${encoded}/issues?state=open&per_page=30&sort=updated`, token: config.token }),
+    githubRequest({ route: `/repos/${encoded}/issues?state=closed&per_page=20&sort=updated`, token: config.token })
   ]);
+  const mapIssue = item => ({
+    number: item.number,
+    title: item.title,
+    state: item.state,
+    labels: item.labels.map(label => label.name),
+    url: item.html_url,
+    updatedAt: item.updated_at,
+    closedAt: item.closed_at,
+    assignee: item.assignee ? item.assignee.login : null
+  });
 
   return {
     id: repo.id,
@@ -81,15 +92,8 @@ async function fetchRepo(config) {
     updatedAt: repo.updated_at,
     defaultBranch: repo.default_branch,
     openIssues: repo.open_issues_count,
-    issues: issues.filter(item => !item.pull_request).map(item => ({
-      number: item.number,
-      title: item.title,
-      state: item.state,
-      labels: item.labels.map(label => label.name),
-      url: item.html_url,
-      updatedAt: item.updated_at,
-      assignee: item.assignee ? item.assignee.login : null
-    })),
+    issues: openIssues.filter(item => !item.pull_request).map(mapIssue),
+    closedIssues: closedIssues.filter(item => !item.pull_request).map(mapIssue),
     releases: releases.map(item => ({
       tag: item.tag_name,
       name: item.name || item.tag_name,
