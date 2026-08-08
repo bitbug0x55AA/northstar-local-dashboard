@@ -57,7 +57,7 @@ async function autoSync(){$('#syncTime').textContent=t('自动同步中','Auto-s
 async function shutdownApp(){try{await fetch('/api/shutdown',{method:'POST'});toast(t('程序正在关闭','Shutting down'));}catch{toast(t('程序已关闭或连接中断','App closed or connection interrupted'));}}
 function switchView(view){state.view=view;render();}
 document.addEventListener('click',event=>{const nav=event.target.closest('.nav-item');if(nav)switchView(nav.dataset.view);if(event.target?.id==='shutdownApp')shutdownApp();});
-$('#refreshButton').addEventListener('click',syncGithub);
+$('#refreshButton').addEventListener('click',async()=>{const button=$('#refreshButton');button.disabled=true;try{if(state.view==='usage'){await syncUsage();}else if(state.view==='observability'&&window.observability){await window.observability.load();}else if(state.view==='planner'&&window.planner){await window.planner.load();}else{await syncGithub();}}finally{button.disabled=false;}});
 render();
 setTimeout(autoSync,10000);
 setInterval(autoSync,5*60*1000);

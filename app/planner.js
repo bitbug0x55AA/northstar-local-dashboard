@@ -203,6 +203,8 @@
     if (pageTitle && view.classList.contains('active-view') && pageTitle.textContent !== title) pageTitle.textContent = title;
   }
 
+  window.planner = { load };
+
   async function initialize() {
     try {
       const status = await request('/api/planner/status');

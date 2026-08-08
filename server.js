@@ -372,31 +372,53 @@ function dateKey(date) {
   return `${year}-${month}-${day}`;
 }
 
-function normalizeLimitSnapshot(record) {
-  const limits = record.payload?.rate_limits || record.rate_limits || record.rateLimits;
-  if (!limits) return null;
-  const primaryReset = limits.primary?.resets_at ? new Date(limits.primary.resets_at * 1000).toISOString() : null;
-  const secondaryReset = limits.secondary?.resets_at ? new Date(limits.secondary.resets_at * 1000).toISOString() : null;
+function firstValue(object, keys) {
+  for (const key of keys) {
+    if (object && object[key] !== undefined && object[key] !== null) return object[key];
+  }
+  return null;
+}
+
+function normalizeReset(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value === 'number' || /^\d+(\.\d+)?$/.test(String(value))) {
+    const numeric = Number(value);
+    const date = new Date(numeric < 100000000000 ? numeric * 1000 : numeric);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function normalizeLimitWindow(window) {
+  if (!window || typeof window !== 'object') return null;
+  const usedPercent = firstValue(window, ['used_percent', 'usedPercent', 'usage_percent', 'usagePercent', 'percent_used', 'percentUsed']);
+  const windowMinutes = firstValue(window, ['window_minutes', 'windowMinutes', 'window_mins', 'windowMins']);
   return {
-    planType: limits.plan_type || null,
-    limitId: limits.limit_id || null,
-    primary: limits.primary ? {
-      usedPercent: limits.primary.used_percent ?? null,
-      windowMinutes: limits.primary.window_minutes ?? null,
-      resetsAt: primaryReset
+    usedPercent: usedPercent === null ? null : Number(usedPercent),
+    windowMinutes: windowMinutes === null ? null : Number(windowMinutes),
+    resetsAt: normalizeReset(firstValue(window, ['resets_at', 'resetsAt', 'reset_at', 'resetAt']))
+  };
+}
+
+function normalizeLimitSnapshot(record) {
+  const limits = record.payload?.info?.rate_limits || record.payload?.rate_limits || record.rate_limits || record.rateLimits || record.limits;
+  if (!limits) return null;
+  const primary = normalizeLimitWindow(limits.primary || limits.primary_window || limits.primaryWindow);
+  const secondary = normalizeLimitWindow(limits.secondary || limits.secondary_window || limits.secondaryWindow);
+  const credits = limits.credits || limits.credit;
+  return {
+    planType: firstValue(limits, ['plan_type', 'planType']) || null,
+    limitId: firstValue(limits, ['limit_id', 'limitId']) || null,
+    primary,
+    secondary,
+    credits: credits ? {
+      hasCredits: firstValue(credits, ['has_credits', 'hasCredits']),
+      unlimited: firstValue(credits, ['unlimited']),
+      balance: firstValue(credits, ['balance'])
     } : null,
-    secondary: limits.secondary ? {
-      usedPercent: limits.secondary.used_percent ?? null,
-      windowMinutes: limits.secondary.window_minutes ?? null,
-      resetsAt: secondaryReset
-    } : null,
-    credits: limits.credits ? {
-      hasCredits: limits.credits.has_credits ?? null,
-      unlimited: limits.credits.unlimited ?? null,
-      balance: limits.credits.balance ?? null
-    } : null,
-    rateLimitReached: limits.rate_limit_reached ?? null,
-    rateLimitReachedType: limits.rate_limit_reached_type ?? null
+    rateLimitReached: firstValue(limits, ['rate_limit_reached', 'rateLimitReached']),
+    rateLimitReachedType: firstValue(limits, ['rate_limit_reached_type', 'rateLimitReachedType'])
   };
 }
 
