@@ -178,11 +178,18 @@ function recordDate(record) {
   return date && !Number.isNaN(date.getTime()) ? date : null;
 }
 
+function dateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function usageFromPath(sourceName, targetPath, budgetTokens) {
   const files = listJsonFiles(targetPath);
   const now = new Date();
-  const todayKey = now.toISOString().slice(0, 10);
-  const monthKey = now.toISOString().slice(0, 7);
+  const todayKey = dateKey(now);
+  const monthKey = todayKey.slice(0, 7);
   const byDay = new Map();
   const models = new Map();
   const sessions = new Set();
@@ -192,21 +199,21 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
   for (const file of files) {
     for (const record of readJsonRecords(file)) {
       const total =
-        numberFrom(record, ['total_tokens', 'totalTokens', 'usage.total_tokens', 'message.usage.total_tokens']) ||
-        numberFrom(record, ['input_tokens', 'inputTokens', 'usage.input_tokens', 'message.usage.input_tokens']) +
-        numberFrom(record, ['output_tokens', 'outputTokens', 'usage.output_tokens', 'message.usage.output_tokens']) +
-        numberFrom(record, ['cache_creation_input_tokens', 'cache_read_input_tokens', 'usage.cache_creation_input_tokens', 'usage.cache_read_input_tokens']);
+        numberFrom(record, ['payload.info.last_token_usage.total_tokens', 'total_tokens', 'totalTokens', 'usage.total_tokens', 'message.usage.total_tokens']) ||
+        numberFrom(record, ['input_tokens', 'inputTokens', 'usage.input_tokens', 'message.usage.input_tokens', 'payload.info.last_token_usage.input_tokens']) +
+        numberFrom(record, ['output_tokens', 'outputTokens', 'usage.output_tokens', 'message.usage.output_tokens', 'payload.info.last_token_usage.output_tokens']) +
+        numberFrom(record, ['cache_creation_input_tokens', 'cache_read_input_tokens', 'cached_input_tokens', 'cache_write_input_tokens', 'usage.cache_creation_input_tokens', 'usage.cache_read_input_tokens', 'payload.info.last_token_usage.cached_input_tokens', 'payload.info.last_token_usage.cache_write_input_tokens']);
       if (!total) continue;
 
       let fileDate = new Date();
       try { fileDate = fs.statSync(file).mtime; } catch {}
       const date = recordDate(record) || fileDate;
-      const dayKey = date.toISOString().slice(0, 10);
+      const dayKey = dateKey(date);
       byDay.set(dayKey, (byDay.get(dayKey) || 0) + total);
       if (dayKey === todayKey) todayTokens += total;
       if (dayKey.startsWith(monthKey)) monthTokens += total;
 
-      const model = record.model || record.modelName || record.message?.model;
+      const model = record.model || record.modelName || record.message?.model || record.payload?.model || record.payload?.thread_settings?.model;
       if (model) models.set(model, (models.get(model) || 0) + total);
       const session = record.session_id || record.sessionId || record.conversation_id || record.conversationId || file;
       sessions.add(session);
@@ -216,7 +223,7 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
   const daily = Array.from({ length: 14 }, (_, index) => {
     const date = new Date(now);
     date.setDate(now.getDate() - (13 - index));
-    return Math.round((byDay.get(date.toISOString().slice(0, 10)) || 0) / 1000);
+    return Math.round((byDay.get(dateKey(date)) || 0) / 1000);
   });
   const modelTotal = Array.from(models.values()).reduce((sum, value) => sum + value, 0);
   const colors = ['teal', 'blue', 'amber'];
@@ -237,7 +244,7 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
 }
 
 function getLocalUsage() {
-  const codexPath = process.env.CODEX_USAGE_PATH || (HOME ? path.join(HOME, '.codex') : '');
+  const codexPath = process.env.CODEX_USAGE_PATH || (HOME ? path.join(HOME, '.codex', 'sessions') : '');
   const claudePath = process.env.CLAUDE_USAGE_PATH || (HOME ? path.join(HOME, '.claude') : '');
   const codex = usageFromPath('local', codexPath, Number(process.env.CODEX_BUDGET_TOKENS || 4400000));
   const claude = usageFromPath('local', claudePath, Number(process.env.CLAUDE_BUDGET_TOKENS || 3600000));
