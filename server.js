@@ -3,8 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const { spawn } = require('child_process');
-const { readPlanner, applyOperations } = require('./server/planner-store');
-const { interpretPlannerInput } = require('./server/planner-llm');
+const { readPlanner, applyOperations, syncGithubToPlanner } = require('./server/planner-store');
+const { interpretPlannerInput, polishGithubIssues } = require('./server/planner-llm');
 
 const PORT = Number(process.env.PORT || 4173);
 const ROOT = __dirname;
@@ -584,6 +584,36 @@ const server = http.createServer(async (req, res) => {
       assertLocalOrigin(req);
       const body = JSON.parse(await readBody(req) || '{}');
       sendJson(res, 200, applyOperations(body.operations, { confirmed: body.confirmed === true }));
+      return;
+    }
+    if (PLANNER_ENABLED && req.method === 'POST' && req.url === '/api/planner/github-sync') {
+      assertLocalOrigin(req);
+      const body = JSON.parse(await readBody(req) || '{}');
+      const github = body.github || {};
+      const current = readPlanner();
+      const known = new Map(current.tasks.filter(task => task.source === 'github' && task.sourceRef).map(task => [task.sourceRef, task.sourceUpdatedAt]));
+      const candidates = [];
+      for (const repo of Array.isArray(github.repos) ? github.repos : []) {
+        for (const issue of Array.isArray(repo.issues) ? repo.issues : []) {
+          const sourceRef = `github:${String(repo.name || '').trim()}#${issue.number}`;
+          if (!known.has(sourceRef) || known.get(sourceRef) !== issue.updatedAt) candidates.push({ ...issue, repo: repo.name });
+        }
+      }
+      const polished = await polishGithubIssues(candidates, body.language);
+      const polishedByRef = new Map(polished.items.map(item => [item.sourceRef, item]));
+      const enriched = {
+        ...github,
+        repos: (github.repos || []).map(repo => ({
+          ...repo,
+          issues: (repo.issues || []).map(issue => {
+            const item = polishedByRef.get(`github:${String(repo.name || '').trim()}#${issue.number}`);
+            return item ? { ...issue, plannerTitle: item.title, plannerNotes: item.notes } : issue;
+          })
+        }))
+      };
+      const result = syncGithubToPlanner(enriched);
+      result.results = { ...result.results, polished: polished.used, polishFallback: polished.fallback };
+      sendJson(res, 200, result);
       return;
     }
     if (PLANNER_ENABLED && req.method === 'POST' && req.url === '/api/planner/interpret') {

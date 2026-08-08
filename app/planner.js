@@ -32,10 +32,11 @@
     const activeTasks = data.tasks.filter(task => task.status !== 'done' && task.status !== 'cancelled');
     const todayTasks = activeTasks.filter(task => task.dueAt && task.dueAt.slice(0, 10) === todayKey());
     const recentLogs = (data.progressLogs || []).slice(0, 6);
+    const githubTaskCount = data.tasks.filter(task => task.source === 'github').length;
     view.innerHTML = `
       <div class="page-heading planner-heading">
         <div><div class="eyebrow">PERSONAL OPERATING SYSTEM</div><h1>${tr('\u4e2a\u4eba\u5de5\u4f5c\u8ba1\u5212', 'Personal Planner')}</h1><p>${tr('\u672c\u5730\u4efb\u52a1\u3001\u8fdb\u5ea6\u65e5\u5fd7\u548c\u53ef\u9009\u7684\u81ea\u7136\u8bed\u8a00\u6574\u7406\u5165\u53e3\u3002', 'Local tasks, progress logs, and an optional natural-language planning assistant.')}</p></div>
-        <span class="source-pill"><i></i> LOCAL PLANNER</span>
+        <span class="source-pill"><i></i> ${githubTaskCount ? tr(`GITHUB 已连接 · ${githubTaskCount} 项`, `GITHUB LINKED · ${githubTaskCount}`) : tr('LOCAL PLANNER', 'LOCAL PLANNER')}</span>
       </div>
       <div class="planner-tabs" role="tablist" aria-label="${tr('\u8ba1\u5212\u9875\u9762\u6a21\u5f0f', 'Planner modes')}">
         <button class="planner-tab ${activeTab === 'overview' ? 'active' : ''}" data-planner-tab="overview" role="tab" aria-selected="${activeTab === 'overview'}"><span class="planner-tab-icon">◈</span>${tr('\u8ba1\u5212\u603b\u89c8', 'Plan overview')}<small>${tr('\u4efb\u52a1\u3001\u8fdb\u5ea6\u4e0e\u65e5\u7a0b', 'Tasks, progress, events')}</small></button>

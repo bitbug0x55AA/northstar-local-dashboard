@@ -83,4 +83,66 @@ async function interpretPlannerInput(input) {
   return validateProposal(extractJson(content));
 }
 
-module.exports = { interpretPlannerInput };
+function githubIssueRef(repo, number) {
+  return `github:${String(repo || '').trim()}#${number}`;
+}
+
+function rawGithubPolish(issue) {
+  const labels = (issue.labels || []).join(', ');
+  return {
+    sourceRef: githubIssueRef(issue.repo, issue.number),
+    title: `#${issue.number} ${String(issue.title || '').trim()}`.slice(0, 1000),
+    notes: [`GitHub: ${issue.repo}`, issue.url ? `URL: ${issue.url}` : '', labels ? `Labels: ${labels}` : ''].filter(Boolean).join('\n').slice(0, 1000)
+  };
+}
+
+async function polishGithubIssues(issues, language = 'zh') {
+  const candidates = (Array.isArray(issues) ? issues : []).filter(issue => issue && issue.repo && issue.number != null && issue.title).slice(0, 20);
+  const fallback = candidates.map(rawGithubPolish);
+  const endpoint = process.env.NORTHSTAR_LLM_URL || '';
+  const model = process.env.NORTHSTAR_LLM_MODEL || '';
+  if (!endpoint || !model || !candidates.length) return { items: fallback, used: 0, fallback: true };
+
+  const system = [
+    'You polish GitHub issues into concise personal-planner entries.',
+    'Return JSON only in this shape: {"items":[{"sourceRef":"...","title":"...","notes":"..."}]}',
+    'Keep exactly one output item for each input sourceRef. Never invent facts, dates, priorities, status, IDs, or repository names.',
+    'The title should be a clear, action-oriented task title, preserving the issue number prefix.',
+    'The notes should briefly explain the work and retain the original GitHub URL and labels when present.',
+    `Write the polished text in ${language === 'en' ? 'English' : 'Simplified Chinese'}, while keeping code names and issue numbers unchanged.`
+  ].join('\n');
+  const input = candidates.map(issue => ({
+    sourceRef: githubIssueRef(issue.repo, issue.number),
+    repo: issue.repo,
+    number: issue.number,
+    title: String(issue.title).slice(0, 300),
+    labels: (issue.labels || []).slice(0, 8),
+    url: issue.url || null
+  }));
+  try {
+    const isOllamaApi = /\/api\/chat(?:\?|$)/i.test(endpoint);
+    const response = await requestJson(endpoint, isOllamaApi ? {
+      model, stream: false, format: 'json', keep_alive: process.env.NORTHSTAR_LLM_KEEP_ALIVE || '5m',
+      messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(input) }]
+    } : {
+      model, temperature: 0, messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(input) }], response_format: { type: 'json_object' }
+    });
+    const content = response.choices?.[0]?.message?.content || response.message?.content || response.output_text;
+    const parsed = extractJson(content);
+    const byRef = new Map((parsed.items || []).map(item => [String(item.sourceRef || ''), item]));
+    const items = fallback.map(item => {
+      const polished = byRef.get(item.sourceRef);
+      if (!polished || typeof polished.title !== 'string' || !polished.title.trim()) return item;
+      return {
+        sourceRef: item.sourceRef,
+        title: polished.title.trim().slice(0, 1000),
+        notes: typeof polished.notes === 'string' && polished.notes.trim() ? polished.notes.trim().slice(0, 1000) : item.notes
+      };
+    });
+    return { items, used: items.filter((item, index) => item.title !== fallback[index].title || item.notes !== fallback[index].notes).length, fallback: false };
+  } catch {
+    return { items: fallback, used: 0, fallback: true };
+  }
+}
+
+module.exports = { interpretPlannerInput, polishGithubIssues };

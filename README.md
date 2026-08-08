@@ -1,6 +1,6 @@
 # Northstar Local Dashboard
 
-Northstar is a local Windows 11 developer dashboard for monitoring GitHub project activity, CI status, and local Codex / Claude Code usage.
+Northstar is a local Windows 11 developer control room for tracking GitHub delivery work, personal planning, and local Codex / Claude Code usage in one place.
 
 ## Start
 
@@ -22,7 +22,9 @@ Then open `http://127.0.0.1:4173`.
 ## Current Features
 
 - GitHub: repository overview, issues, recent releases, latest GitHub Actions CI status, failed-job inspection, and an issue-label planning board.
+- GitHub → Planner bridge: Open Issues are automatically mirrored into Personal Planner after each GitHub sync. A configured local LLM can polish issue titles and notes before they enter the Planner; without a model, the sync safely falls back to the original GitHub text.
 - AI usage: local Codex / Claude Code usage, today and month totals, sessions, 14-day trend, model distribution, and visible subscription-limit snapshots.
+- Personal Planner: a display-first overview of tasks, progress logs, focus, and upcoming events, plus a separate input tab for manual and natural-language updates.
 - Settings: display name, UI language, GitHub owner, repository list, and optional read-only GitHub token.
 - Local-first operation: the server listens only on `127.0.0.1`; non-secret settings and usage summaries are stored in browser `localStorage` and are not written to the repository. On Windows, the GitHub token is stored by the local service using the current user's DPAPI protection and is not stored in browser storage.
 
@@ -42,6 +44,8 @@ Public repositories can usually be monitored without a token. For private reposi
 - The browser sends the token only when saving it to the local service; subsequent GitHub and CI requests omit it and the local service retrieves it from DPAPI.
 - API responses include browser security headers, and state-changing local API routes reject requests with a non-local `Origin`.
 - Automatic sync sends GitHub owner, repository names, and token only to the local `/api/github` endpoint. The local service then calls the GitHub API.
+- GitHub-to-Planner sync is one-way: it can create or complete Planner tasks, but never modifies GitHub and never deletes Planner data. It uses a stable `github:<repo>#<issue-number>` reference to avoid duplicate tasks and does not overwrite manual Planner tasks.
+- If the optional local LLM is configured, only the selected GitHub issue metadata needed for language polishing is sent to that local endpoint. The model may rewrite task titles and notes, but cannot set task status, priority, IDs, or perform Planner operations. LLM failure falls back to raw GitHub text.
 - AI usage is read from local logs and is not uploaded to GitHub.
 - `/api/usage` returns only aggregated tokens, sessions, model distribution, trends, and visible limit snapshots. It does not return local `.codex` / `.claude` paths or raw log content.
 - Static file serving is restricted to `/app/*`; repository root files, `.git`, and env files are not exposed as static assets.
@@ -61,7 +65,7 @@ Only aggregated usage data is stored. You can override the default paths before 
 
 Codex subscription-limit information is read from local Codex rate-limit snapshots when available. Claude Code subscription limits are shown only if local logs expose equivalent data.
 
-## Personal Planner Feature Preview
+## Personal Planner
 
 The Planner is intentionally isolated behind an environment flag. To run this branch with the Planner enabled:
 
@@ -78,6 +82,8 @@ For the local Ollama setup, use the simpler feature-specific launcher. It enable
 
 Planner data is stored separately under `%APPDATA%\Northstar\planner` by default. Set `NORTHSTAR_PLANNER_DIR` to use another local directory. The Planner API uses `/api/planner/*` and does not modify GitHub or AI usage data.
 
+When GitHub sync succeeds, Northstar also calls `/api/planner/github-sync`. Open Issues become Planner tasks; `in-progress`, `in progress`, and `doing` labels map to an in-progress task, `urgent`, `critical`, and `blocker` labels map to high priority, and a matching closed Issue completes its Planner task. Existing manual tasks are not touched. The same bridge runs through the five-minute automatic sync.
+
 Natural-language interpretation is optional. Configure an OpenAI-compatible local model endpoint and model name before starting:
 
 ```powershell
@@ -86,7 +92,7 @@ $env:NORTHSTAR_LLM_MODEL = 'qwen2.5:3b'
 $env:NORTHSTAR_LLM_KEEP_ALIVE = '5m'
 ```
 
-The model only returns proposed Planner operations. The UI previews the operations and requires confirmation before saving them. The first implementation supports manual tasks and progress logs; event scheduling, project linking, and external calendar sync remain separate follow-up work.
+The model returns proposed Planner operations for the manual natural-language input. The UI previews the operations and requires confirmation before saving them. During GitHub sync, the model has a narrower polish-only role: it returns rewritten titles and notes, not Planner operations. Event scheduling, project linking, and external calendar sync remain separate follow-up work.
 
 When started with `.\start-windows.ps1 -Planner`, Northstar records whether it started Ollama itself. Closing the dashboard stops only that Ollama process; an Ollama instance that was already running before Northstar is left untouched. `NORTHSTAR_LLM_KEEP_ALIVE` controls how long the Ollama model remains loaded after an inference request; the default is `5m`. This affects model memory residency, not the Ollama service process itself.
 
@@ -98,6 +104,7 @@ Planner LLM output is treated as untrusted input. The behavior contract is versi
 - `server/planner-system-prompt.txt`: local-model instructions.
 - `server/planner-validator.js`: server-side schema validation and field sanitization.
 - `tests/run-planner-policy.js`: regression checks for unsafe and malformed proposals.
+- `tests/run-planner-sync.js`: regression checks for GitHub task creation, deduplication, and closed-Issue completion.
 
 LLM proposals are marked with `source: "llm"`, always require explicit confirmation, and cannot write through the Planner API without `confirmed: true`. The connection test only parses a fixed prompt and never saves data.
 
