@@ -243,12 +243,15 @@ function getLocalUsage() {
   const claude = usageFromPath('local', claudePath, Number(process.env.CLAUDE_BUDGET_TOKENS || 3600000));
   const daily = codex.daily.map((value, index) => value + (claude.daily[index] || 0));
   const models = [...codex.models, ...claude.models].slice(0, 5);
-  return { codex, claude, daily, models, fetchedAt: new Date().toISOString(), paths: { codex: codexPath, claude: claudePath } };
+  return { codex, claude, daily, models, fetchedAt: new Date().toISOString() };
 }
 
 function serveStatic(req, res) {
   const requested = req.url === '/' ? '/app/index.html' : req.url;
   const safePath = path.normalize(requested.split('?')[0]).replace(/^\.\.(\/|\\)/, '');
+  if (!safePath.startsWith('/app/') && !safePath.startsWith('\\app\\')) {
+    res.writeHead(404); res.end('Not found'); return;
+  }
   const filePath = path.join(ROOT, safePath);
   if (!filePath.startsWith(ROOT) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
     res.writeHead(404); res.end('Not found'); return;

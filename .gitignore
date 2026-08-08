@@ -1,0 +1,26 @@
+.env
+.env.*
+!.env.example
+
+# Local dashboard/private runtime data
+local-data/
+data/
+tmp/
+logs/
+*.log
+*.local.json
+*.private.json
+usage*.json
+usage*.jsonl
+usage*.ndjson
+
+# Dependency/build output
+node_modules/
+dist/
+build/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

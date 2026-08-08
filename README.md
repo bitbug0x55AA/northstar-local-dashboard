@@ -30,6 +30,15 @@ npm start
 
 公开仓库可以留空 Token。私有仓库请使用 fine-grained Personal Access Token，并只授予 Metadata、Issues、Contents 的 Read 权限。
 
+## Privacy / 开源仓库注意事项
+
+- 服务只监听 `127.0.0.1`，不会绑定公网地址。
+- GitHub 配置、token、usage 汇总结果保存在浏览器 `localStorage`，不会写入仓库文件。
+- 自动同步只会把 GitHub owner/repo/token 发给本机 `/api/github`，再由本机服务请求 GitHub API；AI usage 不会上传到 GitHub。
+- `/api/usage` 只返回汇总后的 token、session、模型占比和趋势，不返回本机 `.codex` / `.claude` 路径或原始日志内容。
+- 静态文件服务只开放 `/app/*`，不会把 `.git`、源码根目录文件、env 文件等作为静态资源暴露。
+- `.gitignore` 已忽略 `.env*`、日志、usage 导出、本地数据目录和 `*.local.json` / `*.private.json`。不要把真实 token 或原始 usage 日志写进源码文件。
+
 ## Usage JSON 示例
 
 ```json
