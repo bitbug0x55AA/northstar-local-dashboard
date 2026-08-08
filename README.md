@@ -100,9 +100,11 @@ Natural-language interpretation is optional. Configure an OpenAI-compatible loca
 $env:NORTHSTAR_LLM_URL = 'http://127.0.0.1:11434/api/chat'
 $env:NORTHSTAR_LLM_MODEL = 'qwen2.5:3b'
 $env:NORTHSTAR_LLM_KEEP_ALIVE = '5m'
+# Optional: GitHub Planner polishing timeout per batch (30s-180s, default 90s)
+$env:NORTHSTAR_LLM_POLISH_TIMEOUT_MS = '90000'
 ```
 
-The model returns proposed Planner operations for the manual natural-language input. The UI previews the operations and requires confirmation before saving them. During GitHub sync, the model has a narrower polish-only role: it returns rewritten titles and notes, not Planner operations. Event scheduling and external calendar sync remain separate follow-up work.
+The model returns proposed Planner operations for the manual natural-language input. The UI previews the operations and requires confirmation before saving them. During GitHub sync, the model has a narrower polish-only role: it returns rewritten titles and notes, not Planner operations. GitHub Issues are polished in small batches so one slow or malformed response does not discard successful batches. Batch timeouts and other polish failures are recorded in the Local LLM tab of Logs & Audit. Event scheduling and external calendar sync remain separate follow-up work.
 
 When started with `.\start-windows.ps1 -Planner`, Northstar records whether it started Ollama itself. Closing the dashboard stops only that Ollama process; an Ollama instance that was already running before Northstar is left untouched. `NORTHSTAR_LLM_KEEP_ALIVE` controls how long the Ollama model remains loaded after an inference request; the default is `5m`. This affects model memory residency, not the Ollama service process itself.
 

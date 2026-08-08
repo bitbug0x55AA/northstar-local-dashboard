@@ -677,23 +677,50 @@ const server = http.createServer(async (req, res) => {
       }
       const polished = await polishGithubIssues(candidates, body.language);
       const polishedByRef = new Map(polished.items.map(item => [item.sourceRef, item]));
-      const polishVersion = polished.fallback ? 'github-raw-v2' : GITHUB_POLISH_VERSION;
+      const failedPolishRefs = new Set(polished.failedSourceRefs || []);
+      for (const [index, failure] of (polished.failedBatches || []).entries()) {
+        const timedOut = failure.code === 'LLM_TIMEOUT';
+        recordEvent({
+          id: `github-planner-polish-${Date.now()}-${index}`,
+          tab: 'llm',
+          level: timedOut ? 'error' : 'warning',
+          source: 'ollama',
+          eventType: timedOut ? 'github_polish_timeout' : 'github_polish_failure',
+          message: timedOut
+            ? 'GitHub Planner LLM batch timed out; the affected tasks used GitHub fallback text.'
+            : 'GitHub Planner LLM batch failed; the affected tasks used GitHub fallback text.',
+          details: {
+            code: failure.code,
+            error: failure.error,
+            batchNumber: index + 1,
+            batchCount: polished.batches,
+            batchSize: failure.sourceRefs.length,
+            sourceRefs: failure.sourceRefs,
+            model: process.env.NORTHSTAR_LLM_MODEL || null,
+            timeoutMs: process.env.NORTHSTAR_LLM_POLISH_TIMEOUT_MS || 90000
+          },
+          status: 'open',
+          ruleId: timedOut ? 'LLM-GITHUB-POLISH-TIMEOUT' : 'LLM-GITHUB-POLISH-FAILURE'
+        });
+      }
       const enriched = {
         ...github,
         repos: (github.repos || []).map(repo => ({
           ...repo,
           issues: (repo.issues || []).map(issue => {
-            const item = polishedByRef.get(`github:${String(repo.name || '').trim()}#${issue.number}`);
-            const existing = known.get(`github:${String(repo.name || '').trim()}#${issue.number}`);
+            const sourceRef = `github:${String(repo.name || '').trim()}#${issue.number}`;
+            const item = polishedByRef.get(sourceRef);
+            const existing = known.get(sourceRef);
+            const batchFailed = failedPolishRefs.has(sourceRef);
             // Do not regress an already polished task to raw GitHub text when the
             // local model is temporarily unavailable.
-            const keepExistingPolish = polished.fallback && existing?.sourcePolishVersion && existing.sourcePolishVersion !== 'github-raw-v2';
-            return item && !keepExistingPolish ? { ...issue, plannerTitle: item.title, plannerNotes: item.notes, plannerCategory: item.category, plannerTags: item.tags, plannerPolishVersion: polishVersion } : issue;
+            const keepExistingPolish = batchFailed && existing?.sourcePolishVersion && existing.sourcePolishVersion !== 'github-raw-v2';
+            return item && !keepExistingPolish ? { ...issue, plannerTitle: item.title, plannerNotes: item.notes, plannerCategory: item.category, plannerTags: item.tags, plannerPolishVersion: batchFailed ? 'github-raw-v2' : GITHUB_POLISH_VERSION } : issue;
           })
         }))
       };
       const result = syncGithubToPlanner(enriched);
-      result.results = { ...result.results, polished: polished.used, polishFallback: polished.fallback, polishError: polished.error || null };
+      result.results = { ...result.results, polished: polished.used, polishFallback: polished.fallback, polishBatches: polished.batches, polishFailures: polished.failedBatches?.length || 0, polishError: polished.error || null };
       sendJson(res, 200, result);
       return;
     }

@@ -47,6 +47,7 @@ test.before(async () => {
     cwd: root,
     env: {
       ...process.env, PORT: String(port), NORTHSTAR_PLANNER_ENABLED: 'true',
+      NORTHSTAR_LLM_URL: '', NORTHSTAR_LLM_MODEL: '',
       NORTHSTAR_PLANNER_DIR: path.join(directory, 'planner'),
       NORTHSTAR_OBSERVABILITY_PATH: path.join(directory, 'observability.json'),
       CODEX_USAGE_PATH: path.join(directory, 'missing-codex'),
@@ -102,4 +103,13 @@ test('planner API is enabled but requires explicit confirmation for LLM changes'
   assert.equal(saved.status, 200);
   const planner = await request('GET', '/api/planner');
   assert.equal(planner.body.tasks.length, 1);
+
+  const sync = await request('POST', '/api/planner/github-sync', {
+    language: 'zh',
+    github: { repos: [{ name: 'demo', issues: [{ number: 7, title: 'Raw issue', labels: [], updatedAt: '2026-08-09T00:00:00Z' }], closedIssues: [] }] }
+  }, { Origin: localOrigin });
+  assert.equal(sync.status, 200);
+  assert.equal(sync.body.results.polishFailures, 1);
+  const llmEvents = await request('GET', '/api/observability?tab=llm');
+  assert.ok(llmEvents.body.events.some(event => event.eventType === 'github_polish_failure'));
 });

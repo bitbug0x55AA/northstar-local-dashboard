@@ -6,6 +6,14 @@ const { POLICY, validateProposal } = require('./planner-validator');
 
 const SYSTEM_PROMPT = fs.readFileSync(path.join(__dirname, 'planner-system-prompt.txt'), 'utf8').trim();
 const GITHUB_POLISH_VERSION = 'github-polish-v3';
+const GITHUB_POLISH_BATCH_SIZE = 4;
+const DEFAULT_GITHUB_POLISH_TIMEOUT_MS = 90000;
+
+function githubPolishTimeoutMs() {
+  const configured = Number(process.env.NORTHSTAR_LLM_POLISH_TIMEOUT_MS);
+  if (!Number.isFinite(configured)) return DEFAULT_GITHUB_POLISH_TIMEOUT_MS;
+  return Math.min(180000, Math.max(30000, Math.round(configured)));
+}
 
 function requestJson(target, body, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
@@ -34,7 +42,11 @@ function requestJson(target, body, timeoutMs = 30000) {
         resolve(parsed);
       });
     });
-    request.on('timeout', () => request.destroy(new Error('Local LLM request timed out')));
+    request.on('timeout', () => {
+      const error = new Error('Local LLM request timed out');
+      error.code = 'LLM_TIMEOUT';
+      request.destroy(error);
+    });
     request.on('error', reject);
     request.write(payload);
     request.end();
@@ -104,7 +116,18 @@ async function polishGithubIssues(issues, language = 'zh') {
   const fallback = candidates.map(rawGithubPolish);
   const endpoint = process.env.NORTHSTAR_LLM_URL || '';
   const model = process.env.NORTHSTAR_LLM_MODEL || '';
-  if (!endpoint || !model || !candidates.length) return { items: fallback, used: 0, fallback: true };
+  if (!candidates.length) return { items: [], used: 0, fallback: false, batches: 0, failedBatches: [], failedSourceRefs: [] };
+  if (!endpoint || !model) {
+    return {
+      items: fallback,
+      used: 0,
+      fallback: true,
+      batches: Math.ceil(candidates.length / GITHUB_POLISH_BATCH_SIZE),
+      failedBatches: [{ sourceRefs: candidates.map(item => githubIssueRef(item.repo, item.number)), error: 'Local LLM is not configured', code: 'LLM_NOT_CONFIGURED' }],
+      failedSourceRefs: candidates.map(item => githubIssueRef(item.repo, item.number)),
+      error: 'Local LLM is not configured. Set NORTHSTAR_LLM_URL and NORTHSTAR_LLM_MODEL.'
+    };
+  }
 
   const system = [
     'You polish GitHub issues into concise personal-planner entries.',
@@ -116,41 +139,74 @@ async function polishGithubIssues(issues, language = 'zh') {
     'Extract 2-5 useful tags for technology, domain, stage, or risk. Do not invent tags unsupported by the issue.',
     `Write the polished text in ${language === 'en' ? 'English' : 'Simplified Chinese'}, while keeping code names and issue numbers unchanged.`
   ].join('\n');
-  const input = candidates.map(issue => ({
-    sourceRef: githubIssueRef(issue.repo, issue.number),
-    repo: issue.repo,
-    number: issue.number,
-    title: String(issue.title).slice(0, 300),
-    labels: (issue.labels || []).slice(0, 8),
-    url: issue.url || null,
-    body: issue.body ? String(issue.body).slice(0, 1200) : null
-  }));
-  try {
-    const isOllamaApi = /\/api\/chat(?:\?|$)/i.test(endpoint);
-    const response = await requestJson(endpoint, isOllamaApi ? {
-      model, stream: false, format: 'json', keep_alive: process.env.NORTHSTAR_LLM_KEEP_ALIVE || '5m',
-      messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(input) }]
-    } : {
-      model, temperature: 0, messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(input) }], response_format: { type: 'json_object' }
-    });
-    const content = response.choices?.[0]?.message?.content || response.message?.content || response.output_text;
-    const parsed = extractJson(content);
-    const byRef = new Map((parsed.items || []).map(item => [String(item.sourceRef || ''), item]));
-    const items = fallback.map(item => {
-      const polished = byRef.get(item.sourceRef);
-      if (!polished || typeof polished.title !== 'string' || !polished.title.trim()) return item;
-      return {
-        sourceRef: item.sourceRef,
-        title: polished.title.trim().slice(0, 1000),
-        notes: typeof polished.notes === 'string' && polished.notes.trim() ? polished.notes.trim().slice(0, 1000) : item.notes,
-        category: typeof polished.category === 'string' && polished.category.trim() ? polished.category.trim().slice(0, 80) : item.category,
-        tags: Array.isArray(polished.tags) ? polished.tags.filter(tag => typeof tag === 'string' && tag.trim()).map(tag => tag.trim().slice(0, 40)).slice(0, 6) : item.tags
-      };
-    });
-    return { items, used: items.filter((item, index) => item.title !== fallback[index].title || item.notes !== fallback[index].notes || item.category !== fallback[index].category || JSON.stringify(item.tags) !== JSON.stringify(fallback[index].tags)).length, fallback: false };
-  } catch (error) {
-    return { items: fallback, used: 0, fallback: true, error: error.message };
+  const items = [];
+  const failedBatches = [];
+  const failedSourceRefs = [];
+  const startedAt = Date.now();
+  for (let offset = 0; offset < candidates.length; offset += GITHUB_POLISH_BATCH_SIZE) {
+    const batch = candidates.slice(offset, offset + GITHUB_POLISH_BATCH_SIZE);
+    const batchFallback = batch.map(rawGithubPolish);
+    const batchInput = batch.map(issue => ({
+      sourceRef: githubIssueRef(issue.repo, issue.number),
+      repo: issue.repo,
+      number: issue.number,
+      title: String(issue.title).slice(0, 300),
+      labels: (issue.labels || []).slice(0, 8),
+      url: issue.url || null,
+      body: issue.body ? String(issue.body).slice(0, 1200) : null
+    }));
+    try {
+      const isOllamaApi = /\/api\/chat(?:\?|$)/i.test(endpoint);
+      const response = await requestJson(endpoint, isOllamaApi ? {
+        model, stream: false, format: 'json', keep_alive: process.env.NORTHSTAR_LLM_KEEP_ALIVE || '5m',
+        messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(batchInput) }]
+      } : {
+        model, temperature: 0, messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(batchInput) }], response_format: { type: 'json_object' }
+      }, githubPolishTimeoutMs());
+      const content = response.choices?.[0]?.message?.content || response.message?.content || response.output_text;
+      const parsed = extractJson(content);
+      const byRef = new Map((parsed.items || []).map(item => [String(item.sourceRef || ''), item]));
+      const missing = batchFallback.filter(item => {
+        const polished = byRef.get(item.sourceRef);
+        return !polished || typeof polished.title !== 'string' || !polished.title.trim();
+      });
+      if (missing.length) {
+        const error = new Error(`Local LLM response omitted ${missing.length} GitHub Planner item(s)`);
+        error.code = 'LLM_INCOMPLETE_RESPONSE';
+        throw error;
+      }
+      batchFallback.forEach(item => {
+        const polished = byRef.get(item.sourceRef);
+        items.push({
+          sourceRef: item.sourceRef,
+          title: polished.title.trim().slice(0, 1000),
+          notes: typeof polished.notes === 'string' && polished.notes.trim() ? polished.notes.trim().slice(0, 1000) : item.notes,
+          category: typeof polished.category === 'string' && polished.category.trim() ? polished.category.trim().slice(0, 80) : item.category,
+          tags: Array.isArray(polished.tags) ? polished.tags.filter(tag => typeof tag === 'string' && tag.trim()).map(tag => tag.trim().slice(0, 40)).slice(0, 6) : item.tags
+        });
+      });
+    } catch (error) {
+      items.push(...batchFallback);
+      const sourceRefs = batch.map(item => githubIssueRef(item.repo, item.number));
+      failedSourceRefs.push(...sourceRefs);
+      failedBatches.push({ sourceRefs, error: error.message, code: error.code || 'LLM_REQUEST_FAILED' });
+    }
   }
+  const fallbackByRef = new Map(fallback.map(item => [item.sourceRef, item]));
+  const used = items.filter(item => {
+    const original = fallbackByRef.get(item.sourceRef);
+    return original && (item.title !== original.title || item.notes !== original.notes || item.category !== original.category || JSON.stringify(item.tags) !== JSON.stringify(original.tags));
+  }).length;
+  return {
+    items,
+    used,
+    fallback: failedBatches.length > 0,
+    batches: Math.ceil(candidates.length / GITHUB_POLISH_BATCH_SIZE),
+    failedBatches,
+    failedSourceRefs,
+    durationMs: Date.now() - startedAt,
+    error: failedBatches[0]?.error || null
+  };
 }
 
-module.exports = { GITHUB_POLISH_VERSION, interpretPlannerInput, polishGithubIssues };
+module.exports = { GITHUB_POLISH_BATCH_SIZE, GITHUB_POLISH_VERSION, interpretPlannerInput, polishGithubIssues };
