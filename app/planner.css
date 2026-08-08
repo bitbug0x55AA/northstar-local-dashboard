@@ -25,4 +25,10 @@
 .planner-preview { margin-top:12px; padding:11px; border:1px solid #326e69; border-radius:7px; background:#102b2d; font-size:11px; }
 .planner-preview pre { max-height:220px; overflow:auto; white-space:pre-wrap; color:#b9eee4; font:10px/1.5 var(--mono); margin:9px 0; }
 .planner-preview .ghost-button { margin-left:6px; }
+.planner-llm-result { margin-top:10px; padding:9px 10px; border-radius:6px; font-size:10px; line-height:1.45; }
+.planner-llm-result.muted { color:#74839c; background:#101927; border:1px solid #25344a; }
+.planner-llm-result.success { color:#b9eee4; background:#102b2d; border:1px solid #326e69; }
+.planner-llm-result.failure { color:#ffb1a6; background:#2b1b26; border:1px solid #5c2d36; }
+.planner-llm-result b,.planner-llm-result small { display:block; }.planner-llm-result small { margin-top:4px; color:#9eb0c6; }
+.planner-llm-result pre { max-height:130px; overflow:auto; white-space:pre-wrap; color:#b9eee4; font:10px/1.5 var(--mono); margin:7px 0 0; }
 @media (max-width:1200px) { .planner-grid { grid-template-columns:1fr; } }

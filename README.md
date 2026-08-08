@@ -70,6 +70,12 @@ $env:NORTHSTAR_PLANNER_ENABLED = 'true'
 .\start-windows.ps1
 ```
 
+For the local Ollama setup, use the simpler feature-specific launcher. It enables Planner, starts the local Ollama API when needed, and supplies the default model settings:
+
+```powershell
+.\start-windows.ps1 -Planner
+```
+
 Planner data is stored separately under `%APPDATA%\Northstar\planner` by default. Set `NORTHSTAR_PLANNER_DIR` to use another local directory. The Planner API uses `/api/planner/*` and does not modify GitHub or AI usage data.
 
 Natural-language interpretation is optional. Configure an OpenAI-compatible local model endpoint and model name before starting:

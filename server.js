@@ -570,6 +570,18 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, await interpretPlannerInput(body.input));
       return;
     }
+    if (PLANNER_ENABLED && req.method === 'POST' && req.url === '/api/planner/llm-test') {
+      assertLocalOrigin(req);
+      const startedAt = Date.now();
+      const result = await interpretPlannerInput('测试连接：请记录“完成本地 LLM 接入测试”，不要创建日程。');
+      sendJson(res, 200, {
+        ok: true,
+        model: process.env.NORTHSTAR_LLM_MODEL || null,
+        latencyMs: Date.now() - startedAt,
+        result
+      });
+      return;
+    }
     if (req.method === 'POST' && req.url === '/api/shutdown') {
       assertLocalOrigin(req);
       sendJson(res, 200, { ok: true, message: 'Northstar is shutting down.' });
