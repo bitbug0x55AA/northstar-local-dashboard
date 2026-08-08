@@ -35,7 +35,7 @@ fakeLlm.listen(0, '127.0.0.1', async () => {
     assert.equal(result.failedBatches.length, 1);
     assert.equal(result.failedSourceRefs.length, 1);
     assert.equal(result.items[0].title, '#1 优化后的任务 1');
-    assert.equal(result.items.at(-1).title, '#5 Raw issue 5');
+    assert.equal(result.items.at(-1).title, '#3 Raw issue 3');
     assert.equal(calls, 2);
     console.log('Planner GitHub polish batching checks passed');
   } finally {

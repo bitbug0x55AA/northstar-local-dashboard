@@ -3,226 +3,49 @@
   const view = document.querySelector('#view-planner');
   if (!nav || !view) return;
 
-  let data = { goals: [], projects: [], tasks: [], events: [], progressLogs: [] };
-  let activeTab = 'overview';
+  const DEFAULT_CATEGORIES = ['安全技能学习与实验室', 'GitHub 开源项目', '工作绩效管理', '个人健身'];
+  let data = { goals: [], projects: [], tasks: [], events: [], progressLogs: [], categories: DEFAULT_CATEGORIES };
+  let activePage = 'overview';
   let editingTaskId = null;
+  let draftCategory = null;
   let lastLanguage = document.documentElement.lang;
   const llmState = { configured: false, tested: false, ok: false, testing: false, model: null, latencyMs: null, result: null, error: null };
-
-  const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
-  }[char]));
+  const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
   const isEnglish = () => document.documentElement.lang === 'en';
   const tr = (zh, en) => isEnglish() ? en : zh;
-  const dateText = value => value ? new Date(value).toLocaleString(isEnglish() ? 'en-AU' : 'zh-CN', {
-    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-  }) : tr('\u2014', '\u2014');
+  const dateText = value => value ? new Date(value).toLocaleString(isEnglish() ? 'en-AU' : 'zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : tr('未设置日期', 'No date');
   const todayKey = () => new Date().toISOString().slice(0, 10);
-  const statusText = status => ({ planned: tr('\u8ba1\u5212\u4e2d', 'Planned'), 'in-progress': tr('\u8fdb\u884c\u4e2d', 'In Progress'), done: tr('\u5df2\u5b8c\u6210', 'Done'), cancelled: tr('\u5df2\u53d6\u6d88', 'Cancelled') }[status] || status);
-  const priorityText = priority => ({ high: tr('\u9ad8', 'High'), medium: tr('\u666e\u901a', 'Medium'), low: tr('\u4f4e', 'Low') }[priority] || priority);
+  const statusText = status => ({ planned: tr('计划中', 'Planned'), 'in-progress': tr('进行中', 'In Progress'), done: tr('已完成', 'Done'), cancelled: tr('已取消', 'Cancelled') }[status] || status);
+  const priorityText = priority => ({ high: tr('高', 'High'), medium: tr('普通', 'Medium'), low: tr('低', 'Low') }[priority] || priority);
+  const categoryText = category => ({ '安全技能学习与实验室': tr('安全技能学习与实验室', 'Cybersecurity Learning & Labs'), 'GitHub 开源项目': tr('GitHub 开源项目', 'GitHub Open Source'), '工作绩效管理': tr('工作绩效管理', 'Work Performance'), '个人健身': tr('个人健身', 'Personal Fitness') }[category] || category);
+  const categoryId = category => `category:${category}`;
+  const categoryFromPage = page => page.startsWith('category:') ? page.slice(9) : null;
+  const allCategories = () => [...new Set([...DEFAULT_CATEGORIES, ...(data.categories || []), ...data.tasks.map(task => task.category).filter(Boolean)])];
 
-  async function request(url, options) {
-    const response = await fetch(url, options);
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload.error) throw new Error(payload.error || `Request failed (${response.status})`);
-    return payload;
-  }
-
-  function render() {
-    activeTab = activeTab === 'input' ? 'input' : 'overview';
-    const activeTasks = data.tasks.filter(task => task.status !== 'done' && task.status !== 'cancelled');
-    const displayTasks = data.tasks.filter(task => task.status !== 'cancelled');
-    const editingTask = data.tasks.find(task => task.id === editingTaskId) || null;
-    const todayTasks = activeTasks.filter(task => task.dueAt && task.dueAt.slice(0, 10) === todayKey());
-    const recentLogs = (data.progressLogs || []).slice(0, 6);
-    const githubTaskCount = data.tasks.filter(task => task.source === 'github').length;
-    const projects = data.projects || [];
-    const categories = Object.entries(data.tasks.reduce((groups, task) => { const category = task.category || tr('\u672a\u5206\u7c7b', 'Uncategorized'); groups[category] = (groups[category] || 0) + 1; return groups; }, {})).sort((a, b) => b[1] - a[1]);
-    view.innerHTML = `
-      <div class="page-heading planner-heading">
-        <div><div class="eyebrow">PERSONAL OPERATING SYSTEM</div><h1>${tr('\u4e2a\u4eba\u5de5\u4f5c\u8ba1\u5212', 'Personal Planner')}</h1><p>${tr('\u672c\u5730\u4efb\u52a1\u3001\u8fdb\u5ea6\u65e5\u5fd7\u548c\u53ef\u9009\u7684\u81ea\u7136\u8bed\u8a00\u6574\u7406\u5165\u53e3\u3002', 'Local tasks, progress logs, and an optional natural-language planning assistant.')}</p></div>
-        <span class="source-pill"><i></i> ${githubTaskCount ? tr(`GITHUB 已连接 · ${githubTaskCount} 项`, `GITHUB LINKED · ${githubTaskCount}`) : tr('LOCAL PLANNER', 'LOCAL PLANNER')}</span>
-      </div>
-      <div class="planner-tabs" role="tablist" aria-label="${tr('\u8ba1\u5212\u9875\u9762\u6a21\u5f0f', 'Planner modes')}">
-        <button class="planner-tab ${activeTab === 'overview' ? 'active' : ''}" data-planner-tab="overview" role="tab" aria-selected="${activeTab === 'overview'}"><span class="planner-tab-icon">◈</span>${tr('\u8ba1\u5212\u603b\u89c8', 'Plan overview')}<small>${tr('\u4efb\u52a1\u3001\u8fdb\u5ea6\u4e0e\u65e5\u7a0b', 'Tasks, progress, events')}</small></button>
-        <button class="planner-tab ${activeTab === 'input' ? 'active' : ''}" data-planner-tab="input" role="tab" aria-selected="${activeTab === 'input'}"><span class="planner-tab-icon">＋</span>${tr('\u66f4\u65b0\u8ba1\u5212', 'Update plan')}<small>${tr('\u5f55\u5165\u65b0\u4efb\u52a1\u4e0e\u8fdb\u5ea6', 'Add tasks and progress')}</small></button>
-      </div>
-      <div class="planner-tab-panel ${activeTab === 'overview' ? 'active' : ''}" data-planner-panel="overview" role="tabpanel">
-      <div class="metric-grid planner-metrics">
-        <div class="metric-card"><div class="metric-label">${tr('\u4eca\u65e5\u4efb\u52a1', 'Today')}</div><div class="metric-value">${todayTasks.length}</div><div class="metric-foot good">${tr('\u6709\u660e\u786e\u65e5\u671f\u7684\u5f85\u529e', 'Tasks with a date')}</div></div>
-        <div class="metric-card"><div class="metric-label">${tr('\u8fdb\u884c\u4e2d', 'In Progress')}</div><div class="metric-value">${data.tasks.filter(task => task.status === 'in-progress').length}</div><div class="metric-foot">${tr('\u5f53\u524d\u5de5\u4f5c\u7126\u70b9', 'Current work focus')}</div></div>
-        <div class="metric-card"><div class="metric-label">${tr('\u5f85\u5904\u7406', 'Pending')}</div><div class="metric-value">${activeTasks.length}</div><div class="metric-foot">${tr('\u4e0d\u542b\u5df2\u5b8c\u6210\u4e8b\u9879', 'Excludes completed items')}</div></div>
-        <div class="metric-card"><div class="metric-label">${tr('\u8fdb\u5ea6\u8bb0\u5f55', 'Progress Logs')}</div><div class="metric-value">${data.progressLogs.length}</div><div class="metric-foot">${tr('\u672c\u5730\u7ef4\u62a4', 'Stored locally')}</div></div>
-      </div>
-      <div class="panel planner-projects-panel"><div class="panel-header"><div><div class="panel-title">${tr('\u8ba1\u5212\u9879\u76ee', 'Planner projects')}</div><div class="panel-subtitle">${tr('\u4ece GitHub \u4ed3\u5e93\u81ea\u52a8\u5efa\u7acb\u5e76\u4e0e Issue \u5173\u8054\u3002', 'Repositories synced from GitHub and linked to their Issues.')}</div></div><span class="source-pill"><i></i>${projects.length} ${tr('\u4e2a\u9879\u76ee', 'PROJECTS')}</span></div><div class="planner-project-list">${projects.map(project => { const count = data.tasks.filter(task => task.projectId === project.id).length; const active = data.tasks.filter(task => task.projectId === project.id && !['done', 'cancelled'].includes(task.status)).length; return `<div class="planner-project-row"><div class="planner-project-mark">⌘</div><div class="planner-project-main"><b>${escapeHtml(project.name)}</b><small>${escapeHtml(project.description || tr('\u6765\u81ea GitHub \u7684\u9879\u76ee', 'GitHub-linked project'))}</small></div><span>${active}/${count} ${tr('\u9879\u6d3b\u8dc3', 'active')}</span></div>`; }).join('') || `<div class="empty">${tr('\u6682\u65e0\u81ea\u52a8\u8054\u52a8\u7684 GitHub \u9879\u76ee', 'No GitHub-linked projects yet')}</div>`}</div><div class="planner-category-list"><span class="planner-category-label">${tr('\u5206\u7c7b', 'Categories')}</span>${categories.map(([category, count]) => `<span class="planner-category-chip">${escapeHtml(category)} <b>${count}</b></span>`).join('') || `<span class="empty">${tr('\u6682\u65e0', 'None')}</span>`}</div></div>
-      <div class="planner-grid planner-output-grid">
-        <div class="planner-output-main">
-          <div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('\u8ba1\u5212\u4efb\u52a1', 'Planner tasks')}</div><div class="panel-subtitle">${tr('\u53ef\u5728\u8fd9\u91cc\u5b8c\u6210\u3001\u7f16\u8f91\u6216\u5220\u9664\u4efb\u52a1\u3002', 'Complete, edit, or delete tasks here.')}</div></div><span class="source-pill"><i></i>${activeTasks.length} ${tr('\u9879\u5f85\u529e', 'TO DO')}</span></div><div id="plannerTasks">${renderTasks(displayTasks)}</div></div>
-          <div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('\u8fdb\u5ea6\u65e5\u5fd7', 'Progress log')}</div><div class="panel-subtitle">${tr('\u4fdd\u7559\u201c\u6211\u662f\u600e\u4e48\u8d70\u5230\u73b0\u5728\u7684\u201d\u3002', 'Keep a record of how you got here.')}</div></div></div><div class="planner-log-list">${recentLogs.map(log => `<div class="planner-log"><span>${dateText(log.occurredAt)}</span><b>${escapeHtml(log.content)}</b></div>`).join('') || `<div class="empty">${tr('\u6682\u65e0\u8fdb\u5ea6\u8bb0\u5f55', 'No progress logs')}</div>`}</div></div>
-        </div>
-        <div>
-          <div class="panel planner-focus-card"><div class="panel-header"><div><div class="panel-title">${tr('\u4eca\u65e5\u7126\u70b9', 'Today\'s focus')}</div><div class="panel-subtitle">${tr('\u5148\u505a\u6700\u91cd\u8981\u7684\u4e8b\u3002', 'Start with what matters most.')}</div></div></div><div class="planner-focus-number">${todayTasks.length}</div><p>${tr('\u9879\u4efb\u52a1\u5b89\u6392\u5728\u4eca\u5929\u3002', 'tasks scheduled for today.')}</p><button class="primary-button" data-planner-tab="input">${tr('\u66f4\u65b0\u8ba1\u5212', 'Update plan')} →</button></div>
-          <div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('\u8fd1\u671f\u65e5\u7a0b', 'Upcoming events')}</div><div class="panel-subtitle">${tr('\u56fa\u5b9a\u65f6\u95f4\u4e8b\u9879', 'Fixed-time items')}</div></div></div><div id="plannerEvents">${renderEvents()}</div></div>
-        </div>
-      </div></div>
-      <div class="planner-tab-panel ${activeTab === 'input' ? 'active' : ''}" data-planner-panel="input" role="tabpanel">
-      <div class="planner-grid planner-input-grid">
-        <div>
-          <div class="panel planner-input-panel">
-            <div class="panel-header"><div><div class="panel-title">${tr('\u81ea\u7136\u8bed\u8a00\u66f4\u65b0', 'Natural-language update')}</div><div class="panel-subtitle">${llmState.configured ? tr('\u672c\u5730\u6a21\u578b\u5df2\u914d\u7f6e\uff1b\u89e3\u6790\u7ed3\u679c\u4ecd\u9700\u786e\u8ba4\u3002', 'Local model configured; proposed changes still require confirmation.') : tr('\u672c\u5730\u6a21\u578b\u5c1a\u672a\u914d\u7f6e\uff0c\u53ef\u5148\u4f7f\u7528\u624b\u52a8\u4efb\u52a1\u3002', 'Local model is not configured; manual tasks are still available.')}</div></div><span id="plannerLlmBadge" class="source-pill ${llmBadgeClass()}"><i></i>${llmBadgeText()}</span></div>
-            <textarea id="plannerNaturalInput" placeholder="${tr('\u4f8b\u5982\uff1a\u4eca\u5929\u5b8c\u6210 CDSA \u590d\u4e60\uff0c\u660e\u5929\u665a\u4e0a\u5b89\u6392 OST2 \u5b66\u4e60\u4e24\u5c0f\u65f6', 'For example: Finish CDSA review today and schedule two hours of OST2 tomorrow evening')}"></textarea>
-            <div class="planner-actions"><button class="primary-button" id="plannerInterpret" ${llmState.configured ? '' : 'disabled'}>${tr('\u89e3\u6790\u5e76\u9884\u89c8', 'Parse and preview')}</button><button class="ghost-button" id="plannerLlmTest" ${llmState.configured ? '' : 'disabled'}>${tr('\u6d4b\u8bd5\u672c\u5730 LLM', 'Test Local LLM')}</button><button class="ghost-button" id="plannerRefresh">${tr('\u5237\u65b0', 'Refresh')}</button></div>
-            <div id="plannerLlmTestResult">${llmTestResultHtml()}</div><div id="plannerPreview"></div>
-          </div>
-          <div class="panel"><div class="panel-header"><div><div class="panel-title">${editingTask ? tr('\u7f16\u8f91\u4efb\u52a1', 'Edit task') : tr('\u5feb\u901f\u6dfb\u52a0\u4efb\u52a1', 'Quick add task')}</div><div class="panel-subtitle">${editingTask ? tr('\u4fee\u6539\u540e\u4fdd\u5b58\u4efb\u52a1\u3002', 'Update the task and save your changes.') : tr('\u5148\u5efa\u7acb\u53ef\u6267\u884c\u7684\u672c\u5730\u8ba1\u5212\u3002', 'Start with an actionable local plan.')}</div></div></div><div class="planner-form"><input id="plannerTaskTitle" value="${editingTask ? escapeHtml(editingTask.title) : ''}" placeholder="${tr('\u4efb\u52a1\u540d\u79f0', 'Task title')}" /><input id="plannerTaskDue" type="datetime-local" value="${editingTask?.dueAt ? editingTask.dueAt.slice(0, 16) : ''}" /><select id="plannerTaskPriority"><option value="medium" ${editingTask?.priority === 'medium' || !editingTask ? 'selected' : ''}>${tr('\u666e\u901a\u4f18\u5148\u7ea7', 'Medium priority')}</option><option value="high" ${editingTask?.priority === 'high' ? 'selected' : ''}>${tr('\u9ad8\u4f18\u5148\u7ea7', 'High priority')}</option><option value="low" ${editingTask?.priority === 'low' ? 'selected' : ''}>${tr('\u4f4e\u4f18\u5148\u7ea7', 'Low priority')}</option></select><select id="plannerTaskStatus"><option value="planned" ${editingTask?.status === 'planned' || !editingTask ? 'selected' : ''}>${tr('\u8ba1\u5212\u4e2d', 'Planned')}</option><option value="in-progress" ${editingTask?.status === 'in-progress' ? 'selected' : ''}>${tr('\u8fdb\u884c\u4e2d', 'In Progress')}</option><option value="done" ${editingTask?.status === 'done' ? 'selected' : ''}>${tr('\u5df2\u5b8c\u6210', 'Done')}</option></select><button class="primary-button" id="plannerSaveTask">${editingTask ? tr('\u4fdd\u5b58\u4fee\u6539', 'Save changes') : tr('\u6dfb\u52a0\u4efb\u52a1', 'Add task')}</button>${editingTask ? `<button class="ghost-button" id="plannerCancelEdit">${tr('\u53d6\u6d88', 'Cancel')}</button>` : ''}</div></div>
-        </div>
-        <div>
-          <div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('\u8bb0\u5f55\u8fdb\u5ea6', 'Log progress')}</div><div class="panel-subtitle">${tr('\u8bb0\u4e0b\u4f60\u4eca\u5929\u5b8c\u6210\u4e86\u4ec0\u4e48\u3002', 'Capture what moved forward today.')}</div></div></div><textarea id="plannerLogInput" class="planner-log-input" placeholder="${tr('\u4f8b\u5982\uff1a\u5b8c\u6210\u4e86 CDSA \u7b2c\u4e00\u7ae0\u590d\u4e60...', 'For example: Finished the first CDSA review chapter...')}"></textarea><button class="ghost-button planner-log-button" id="plannerAddLog">${tr('\u4fdd\u5b58\u8fdb\u5ea6', 'Save progress')}</button></div>
-          <div class="panel planner-input-guide"><div class="eyebrow">${tr('\u5f00\u59cb\u4e00\u4e2a\u5c0f\u66f4\u65b0', 'MAKE A SMALL UPDATE')}</div><h2>${tr('\u8ba9\u8ba1\u5212\u8ddf\u4e0a\u4f60\u7684\u8282\u594f', 'Keep the plan in motion')}</h2><p>${tr('\u6bcf\u6b21\u53ea\u9700\u66f4\u65b0\u4e00\u4e2a\u5177\u4f53\u4efb\u52a1\u6216\u8bb0\u4e0b\u4e00\u6b65\u3002', 'Add one concrete task or capture the next step after each session.')}</p><div class="planner-guide-row"><span>01</span>${tr('\u5148\u5b9a\u4e49\u4e00\u4e2a\u53ef\u6267\u884c\u7684\u4efb\u52a1', 'Define one actionable task')}</div><div class="planner-guide-row"><span>02</span>${tr('\u7528\u8fdb\u5ea6\u65e5\u5fd7\u8bb0\u4e0b\u4f60\u7684\u8fdb\u5c55', 'Log what moved forward')}</div></div>
-        </div>
-      </div></div>`;
-    bind();
-  }
-
-  function renderTasks(tasks) {
-    if (!tasks.length) return `<div class="empty">${tr('\u6682\u65e0\u5f85\u5904\u7406\u4efb\u52a1', 'No pending tasks')}</div>`;
-    return tasks.map(task => { const tags = Array.isArray(task.tags) ? task.tags.slice(0, 4) : []; const polished = task.source === 'github' && task.sourcePolishVersion && task.sourcePolishVersion !== 'github-raw-v2'; const notes = task.notes ? String(task.notes).split(/\r?\n/).find(line => !/^(GitHub:|URL:|Labels:)/i.test(line)) : ''; return `<div class="planner-task"><div class="planner-task-main"><b>${escapeHtml(task.title)}</b>${notes ? `<p class="planner-task-notes">${escapeHtml(notes)}</p>` : ''}<small>${task.category ? `${escapeHtml(task.category)} · ` : ''}${task.dueAt ? `${tr('\u622a\u6b62', 'Due')} ${dateText(task.dueAt)}` : tr('\u672a\u8bbe\u7f6e\u622a\u6b62\u65f6\u95f4', 'No due date')} Â· ${statusText(task.status)}${task.source === 'github' ? ` · <em class="planner-task-source ${polished ? 'polished' : 'raw'}">${polished ? tr('LLM 已优化', 'LLM polished') : tr('GitHub 原文', 'GitHub raw')}</em>` : ''}</small>${tags.length ? `<div class="planner-task-tags">${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div>` : ''}</div><span class="planner-priority ${task.priority}">${priorityText(task.priority)}</span><button class="text-button planner-complete" data-id="${task.id}" data-status="${task.status}">${task.status === 'done' ? tr('\u91cd\u65b0\u6253\u5f00', 'Reopen') : tr('\u5b8c\u6210', 'Complete')}</button><button class="text-button planner-edit" data-id="${task.id}">${tr('\u7f16\u8f91', 'Edit')}</button><button class="text-button planner-delete" data-id="${task.id}">${tr('\u5220\u9664', 'Delete')}</button></div>`; }).join('');
-  }
-
-  function renderEvents() {
-    const events = [...data.events].sort((a, b) => new Date(a.startAt) - new Date(b.startAt)).slice(0, 6);
-    return events.length ? events.map(event => `<div class="planner-event"><span>${dateText(event.startAt)}</span><b>${escapeHtml(event.title)}</b></div>`).join('') : `<div class="empty">${tr('\u6682\u65e0\u56fa\u5b9a\u65e5\u7a0b', 'No scheduled events')}</div>`;
-  }
-
-  function llmBadgeText() {
-    if (!llmState.configured) return tr('\u624b\u52a8\u6a21\u5f0f', 'MANUAL MODE');
-    if (!llmState.tested) return tr('LLM \u672a\u6d4b\u8bd5', 'LLM UNTESTED');
-    return llmState.ok ? tr('LLM \u5df2\u8fde\u63a5', 'LLM CONNECTED') : tr('LLM \u9519\u8bef', 'LLM ERROR');
-  }
-
+  async function request(url, options) { const response = await fetch(url, options); const payload = await response.json().catch(() => ({})); if (!response.ok || payload.error) throw new Error(payload.error || `Request failed (${response.status})`); return payload; }
+  async function apply(operations, confirmed = false) { const result = await request('/api/planner/operations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operations, confirmed }) }); data = result.data; render(); }
+  function tasksFor(category) { return category ? data.tasks.filter(task => task.category === category && task.status !== 'cancelled') : data.tasks.filter(task => task.status !== 'cancelled'); }
+  function taskProgress(tasks) { return tasks.length ? Math.round(tasks.filter(task => task.status === 'done').length / tasks.length * 100) : 0; }
+  function navButton(page, label, count, icon) { return `<button class="planner-page-tab ${activePage === page ? 'active' : ''}" data-planner-tab="${escapeHtml(page)}" role="tab" aria-selected="${activePage === page}"><span>${icon}</span>${escapeHtml(label)}${count !== undefined ? `<b>${count}</b>` : ''}</button>`; }
+  function renderMilestones(categories) { return `<div class="panel planner-milestones"><div class="panel-header"><div><div class="eyebrow">${new Date().getFullYear()} ANNUAL DIRECTION</div><div class="panel-title">${tr('年度 Milestones', 'Annual Milestones')}</div><div class="panel-subtitle">${tr('总览始终保留，用来查看全年关键方向的积累。', 'Always available in Overview to keep the year’s key directions in view.')}</div></div><span class="source-pill"><i></i>${tr('长期视图', 'LONG-TERM')}</span></div><div class="milestone-list">${categories.map(category => { const tasks = tasksFor(category); const progress = taskProgress(tasks); return `<button class="milestone-row" data-planner-tab="${escapeHtml(categoryId(category))}"><div><b>${escapeHtml(categoryText(category))}</b><small>${tasks.length ? tr(`${tasks.filter(task => task.status === 'done').length}/${tasks.length} 项任务已完成`, `${tasks.filter(task => task.status === 'done').length}/${tasks.length} tasks complete`) : tr('添加第一个里程碑或任务', 'Add a first milestone or task')}</small></div><div class="milestone-track"><i style="width:${progress}%"></i></div><strong>${progress}%</strong></button>`; }).join('')}</div></div>`; }
+  function renderTaskList(tasks, emptyText) { if (!tasks.length) return `<div class="empty">${emptyText || tr('还没有任务', 'No tasks yet')}</div>`; return tasks.map(task => { const notes = task.notes ? String(task.notes).split(/\r?\n/).find(line => !/^(GitHub:|URL:|Labels:)/i.test(line)) : ''; return `<div class="planner-task"><div class="planner-task-main"><b>${escapeHtml(task.title)}</b>${notes ? `<p class="planner-task-notes">${escapeHtml(notes)}</p>` : ''}<small>${task.dueAt ? `${tr('截止', 'Due')} ${dateText(task.dueAt)} · ` : ''}${statusText(task.status)}</small></div><span class="planner-priority ${task.priority}">${priorityText(task.priority)}</span><button class="text-button planner-complete" data-id="${task.id}" data-status="${task.status}">${task.status === 'done' ? tr('重新打开', 'Reopen') : tr('完成', 'Complete')}</button><button class="text-button planner-edit" data-id="${task.id}">${tr('编辑', 'Edit')}</button><button class="text-button planner-delete" data-id="${task.id}">${tr('删除', 'Delete')}</button></div>`; }).join(''); }
+  function renderOverview(categories) { const active = tasksFor().filter(task => !['done', 'cancelled'].includes(task.status)); const today = active.filter(task => task.dueAt && task.dueAt.slice(0, 10) === todayKey()); const recentLogs = (data.progressLogs || []).slice(0, 5); return `<div class="metric-grid planner-metrics"><div class="metric-card"><div class="metric-label">${tr('今日任务', 'Today')}</div><div class="metric-value">${today.length}</div><div class="metric-foot good">${tr('有明确日期的待办', 'Dated tasks')}</div></div><div class="metric-card"><div class="metric-label">${tr('进行中', 'In Progress')}</div><div class="metric-value">${data.tasks.filter(task => task.status === 'in-progress').length}</div><div class="metric-foot">${tr('当前工作焦点', 'Current focus')}</div></div><div class="metric-card"><div class="metric-label">${tr('待处理', 'Pending')}</div><div class="metric-value">${active.length}</div><div class="metric-foot">${tr('跨所有分类', 'Across all categories')}</div></div><div class="metric-card"><div class="metric-label">${tr('进度记录', 'Progress logs')}</div><div class="metric-value">${data.progressLogs.length}</div><div class="metric-foot">${tr('本地维护', 'Stored locally')}</div></div></div>${renderMilestones(categories)}<div class="planner-grid planner-output-grid"><div><div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('接下来要做', 'Up next')}</div><div class="panel-subtitle">${tr('所有分类中最需要推进的事项。', 'The items that need momentum across your plan.')}</div></div><button class="text-button" data-planner-tab="add">${tr('添加任务', 'Add task')}</button></div>${renderTaskList(active.slice(0, 8), tr('还没有待办，先添加一个任务吧。', 'No pending tasks—add one to begin.'))}</div></div><div><div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('最近进度', 'Recent progress')}</div><div class="panel-subtitle">${tr('持续记录每一步推进。', 'A record of each step forward.')}</div></div></div><div class="planner-log-list">${recentLogs.map(log => `<div class="planner-log"><span>${dateText(log.occurredAt)}</span><b>${escapeHtml(log.content)}</b></div>`).join('') || `<div class="empty">${tr('暂无进度记录', 'No progress logs')}</div>`}</div></div><div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('近期日程', 'Upcoming events')}</div></div></div>${renderEvents()}</div></div></div>`; }
+  function renderCategory(category) { const tasks = tasksFor(category); const active = tasks.filter(task => !['done', 'cancelled'].includes(task.status)); const done = tasks.filter(task => task.status === 'done'); return `<div class="planner-category-hero"><div><div class="eyebrow">CATEGORY SPACE</div><h2>${escapeHtml(categoryText(category))}</h2><p>${tr('把同一方向的任务、进度和下一步集中在一个专属页面。', 'A dedicated page for tasks, progress, and next steps in this direction.')}</p></div><div class="category-progress"><b>${taskProgress(tasks)}%</b><span>${tr('完成度', 'complete')}</span></div></div><div class="planner-grid planner-output-grid"><div><div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('进行中的计划', 'In progress')}</div><div class="panel-subtitle">${active.length} ${tr('项待推进', 'to move forward')}</div></div><button class="text-button" data-planner-tab="add" data-category="${escapeHtml(category)}">${tr('添加任务', 'Add task')}</button></div>${renderTaskList(active, tr('这个分类还没有待办。', 'No pending tasks in this category.'))}</div></div><div><div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('已完成', 'Completed')}</div><div class="panel-subtitle">${done.length} ${tr('项成果', 'items')}</div></div></div>${renderTaskList(done.slice(0, 6), tr('完成的任务会出现在这里。', 'Completed tasks appear here.'))}</div></div></div>`; }
+  function categoryOptions(selected) { return allCategories().map(category => `<option value="${escapeHtml(category)}" ${category === selected ? 'selected' : ''}>${escapeHtml(categoryText(category))}</option>`).join(''); }
+  function renderAddPage() { const editing = data.tasks.find(task => task.id === editingTaskId); const selectedCategory = editing?.category || draftCategory || allCategories()[0]; return `<div class="planner-grid planner-input-grid"><div><div class="panel planner-input-panel"><div class="panel-header"><div><div class="panel-title">${editing ? tr('编辑任务', 'Edit task') : tr('添加计划', 'Add to your plan')}</div><div class="panel-subtitle">${tr('任务会直接归入所选分类页面。', 'The task will appear directly in its selected category page.')}</div></div></div><div class="planner-form planner-add-form"><input id="plannerTaskTitle" value="${editing ? escapeHtml(editing.title) : ''}" placeholder="${tr('任务名称', 'Task title')}" /><select id="plannerTaskCategory">${categoryOptions(selectedCategory)}</select><input id="plannerTaskDue" type="datetime-local" value="${editing?.dueAt ? editing.dueAt.slice(0, 16) : ''}" /><select id="plannerTaskPriority"><option value="medium" ${editing?.priority === 'medium' || !editing ? 'selected' : ''}>${tr('普通优先级', 'Medium priority')}</option><option value="high" ${editing?.priority === 'high' ? 'selected' : ''}>${tr('高优先级', 'High priority')}</option><option value="low" ${editing?.priority === 'low' ? 'selected' : ''}>${tr('低优先级', 'Low priority')}</option></select><select id="plannerTaskStatus"><option value="planned" ${editing?.status === 'planned' || !editing ? 'selected' : ''}>${tr('计划中', 'Planned')}</option><option value="in-progress" ${editing?.status === 'in-progress' ? 'selected' : ''}>${tr('进行中', 'In Progress')}</option><option value="done" ${editing?.status === 'done' ? 'selected' : ''}>${tr('已完成', 'Done')}</option></select><button class="primary-button" id="plannerSaveTask">${editing ? tr('保存修改', 'Save changes') : tr('添加任务', 'Add task')}</button>${editing ? `<button class="ghost-button" id="plannerCancelEdit">${tr('取消', 'Cancel')}</button>` : ''}</div></div><div class="panel planner-input-panel"><div class="panel-header"><div><div class="panel-title">${tr('自然语言更新', 'Natural-language update')}</div><div class="panel-subtitle">${llmState.configured ? tr('解析结果仍需确认后才写入。', 'Proposed changes still require confirmation.') : tr('本地模型尚未配置，可使用上方手动添加。', 'Local model is not configured; use the form above.')}</div></div><span id="plannerLlmBadge" class="source-pill ${llmBadgeClass()}"><i></i>${llmBadgeText()}</span></div><textarea id="plannerNaturalInput" placeholder="${tr('例如：本周完成 Web 安全 Lab 的认证模块', 'For example: Finish the auth module in this week’s web security lab')}"></textarea><div class="planner-actions"><button class="primary-button" id="plannerInterpret" ${llmState.configured ? '' : 'disabled'}>${tr('解析并预览', 'Parse and preview')}</button><button class="ghost-button" id="plannerLlmTest" ${llmState.configured ? '' : 'disabled'}>${tr('测试本地 LLM', 'Test Local LLM')}</button></div><div id="plannerLlmTestResult">${llmTestResultHtml()}</div><div id="plannerPreview"></div></div></div><div><div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('分类设置', 'Category settings')}</div><div class="panel-subtitle">${tr('自定义分类会成为一个新的独立子页面。', 'Each custom category becomes its own dedicated subpage.')}</div></div></div><div class="planner-category-manager">${allCategories().map(category => `<div><span>${escapeHtml(categoryText(category))}</span>${DEFAULT_CATEGORIES.includes(category) ? `<small>${tr('默认', 'DEFAULT')}</small>` : `<button class="text-button planner-remove-category" data-category="${escapeHtml(category)}">${tr('移除', 'Remove')}</button>`}</div>`).join('')}</div><div class="planner-actions"><input id="plannerNewCategory" placeholder="${tr('新分类名称', 'New category name')}" /><button class="ghost-button" id="plannerAddCategory">${tr('添加分类', 'Add category')}</button></div></div><div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('记录进度', 'Log progress')}</div></div></div><textarea id="plannerLogInput" class="planner-log-input" placeholder="${tr('记录今天推进了什么…', 'Capture what moved forward today…')}"></textarea><button class="ghost-button planner-log-button" id="plannerAddLog">${tr('保存进度', 'Save progress')}</button></div></div></div>`; }
+  function renderEvents() { const events = [...data.events].sort((a, b) => new Date(a.startAt) - new Date(b.startAt)).slice(0, 5); return events.length ? events.map(event => `<div class="planner-event"><span>${dateText(event.startAt)}</span><b>${escapeHtml(event.title)}</b></div>`).join('') : `<div class="empty">${tr('暂无固定日程', 'No scheduled events')}</div>`; }
+  function render() { const categories = allCategories(); if (activePage !== 'overview' && activePage !== 'add' && !categories.includes(categoryFromPage(activePage))) activePage = 'overview'; const githubCount = data.tasks.filter(task => task.source === 'github').length; view.innerHTML = `<div class="page-heading planner-heading"><div><div class="eyebrow">PERSONAL OPERATING SYSTEM</div><h1>${tr('个人计划', 'Personal Planner')}</h1><p>${tr('像 GitHub 一样，把不同人生方向拆成清晰的专属页面。', 'GitHub-style dedicated pages for every important direction in your life.')}</p></div><span class="source-pill"><i></i>${githubCount ? `GITHUB LINKED · ${githubCount}` : 'LOCAL PLANNER'}</span></div><div class="planner-page-tabs" role="tablist" aria-label="${tr('个人计划页面', 'Planner pages')}">${navButton('overview', tr('Overview', 'Overview'), undefined, '◈')}${categories.map(category => navButton(categoryId(category), categoryText(category), tasksFor(category).filter(task => task.status !== 'done').length, '·')).join('')}${navButton('add', tr('添加', 'Add'), undefined, '＋')}</div><div class="planner-page-content">${activePage === 'overview' ? renderOverview(categories) : activePage === 'add' ? renderAddPage() : renderCategory(categoryFromPage(activePage))}</div>`; bind(); }
+  function llmBadgeText() { if (!llmState.configured) return tr('手动模式', 'MANUAL MODE'); if (!llmState.tested) return tr('LLM 未测试', 'LLM UNTESTED'); return llmState.ok ? tr('LLM 已连接', 'LLM CONNECTED') : tr('LLM 错误', 'LLM ERROR'); }
   function llmBadgeClass() { return !llmState.configured || (llmState.tested && !llmState.ok) ? 'warn' : ''; }
-
-  function llmTestResultHtml() {
-    if (!llmState.tested) return `<div class="planner-llm-result muted">${tr('\u5c1a\u672a\u6267\u884c\u8fde\u63a5\u6d4b\u8bd5\u3002', 'Connection test has not run yet.')}</div>`;
-    if (!llmState.ok) return `<div class="planner-llm-result failure"><b>${tr('LLM \u6d4b\u8bd5\u5931\u8d25', 'LLM test failed')}</b><small>${escapeHtml(llmState.error || tr('\u672a\u77e5\u9519\u8bef', 'Unknown error'))}</small></div>`;
-    return `<div class="planner-llm-result success"><b>${tr('LLM \u5df2\u6210\u529f\u63a5\u5165', 'LLM connected successfully')}</b><small>${tr('\u6a21\u578b', 'Model')}: ${escapeHtml(llmState.model || 'unknown')} Â· ${tr('\u5ef6\u8fdf', 'Latency')}: ${llmState.latencyMs ?? tr('\u2014', '\u2014')}ms</small><pre>${escapeHtml(JSON.stringify(llmState.result?.operations || [], null, 2))}</pre></div>`;
-  }
-
-  function updateLlmTestUi() {
-    const badge = document.querySelector('#plannerLlmBadge');
-    const result = document.querySelector('#plannerLlmTestResult');
-    const testButton = document.querySelector('#plannerLlmTest');
-    if (badge) { badge.className = `source-pill ${llmBadgeClass()}`; badge.innerHTML = `<i></i>${llmBadgeText()}`; }
-    if (result) result.innerHTML = llmState.testing ? `<div class="planner-llm-result muted">${tr('\u6b63\u5728\u8c03\u7528\u672c\u5730\u6a21\u578b\u6d4b\u8bd5...', 'Testing the local model...')}</div>` : llmTestResultHtml();
-    if (testButton) { testButton.disabled = !llmState.configured || llmState.testing; testButton.textContent = llmState.testing ? tr('\u6d4b\u8bd5\u4e2d...', 'Testing...') : tr('\u6d4b\u8bd5\u672c\u5730 LLM', 'Test Local LLM'); }
-  }
-
-  async function apply(operations, confirmed = false) {
-    const result = await request('/api/planner/operations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operations, confirmed }) });
-    data = result.data;
-    render();
-  }
-
-  function bind() {
-    document.querySelectorAll('[data-planner-tab]').forEach(button => button.addEventListener('click', () => {
-      activeTab = button.dataset.plannerTab === 'input' ? 'input' : 'overview';
-      document.querySelectorAll('[data-planner-tab]').forEach(tab => {
-        const selected = tab.dataset.plannerTab === activeTab;
-        tab.classList.toggle('active', selected);
-        tab.setAttribute('aria-selected', selected);
-      });
-      document.querySelectorAll('[data-planner-panel]').forEach(panel => panel.classList.toggle('active', panel.dataset.plannerPanel === activeTab));
-    }));
-    document.querySelector('#plannerRefresh')?.addEventListener('click', load);
-    document.querySelector('#plannerSaveTask')?.addEventListener('click', async () => {
-      const title = document.querySelector('#plannerTaskTitle').value.trim();
-      if (!title) return;
-      const operation = editingTaskId ? { type: 'update_task', id: editingTaskId, title, dueAt: document.querySelector('#plannerTaskDue').value || null, priority: document.querySelector('#plannerTaskPriority').value, status: document.querySelector('#plannerTaskStatus').value } : { type: 'create_task', title, dueAt: document.querySelector('#plannerTaskDue').value || null, priority: document.querySelector('#plannerTaskPriority').value, status: document.querySelector('#plannerTaskStatus').value };
-      try { await apply([operation]); editingTaskId = null; render(); } catch (error) { showError(error.message); }
-    });
-    document.querySelector('#plannerCancelEdit')?.addEventListener('click', () => { editingTaskId = null; render(); });
-    document.querySelector('#plannerAddLog')?.addEventListener('click', async () => {
-      const input = document.querySelector('#plannerLogInput');
-      if (!input.value.trim()) return;
-      try { await apply([{ type: 'log_progress', content: input.value.trim() }]); } catch (error) { showError(error.message); }
-    });
-    document.querySelectorAll('.planner-complete').forEach(button => button.addEventListener('click', async () => {
-      try { await apply([{ type: 'update_task', id: button.dataset.id, status: button.dataset.status === 'done' ? 'planned' : 'done' }]); } catch (error) { showError(error.message); }
-    }));
-    document.querySelectorAll('.planner-edit').forEach(button => button.addEventListener('click', () => { editingTaskId = button.dataset.id; activeTab = 'input'; render(); }));
-    document.querySelectorAll('.planner-delete').forEach(button => button.addEventListener('click', async () => {
-      if (!window.confirm(tr('\u786e\u5b9a\u5220\u9664\u8fd9\u4e2a\u4efb\u52a1\u5417\uff1f\u6b64\u64cd\u4f5c\u4e0d\u53ef\u64a4\u9500\u3002', 'Delete this task? This cannot be undone.'))) return;
-      try { await apply([{ type: 'delete_task', id: button.dataset.id }]); } catch (error) { showError(error.message); }
-    }));
-    document.querySelector('#plannerInterpret')?.addEventListener('click', interpret);
-    document.querySelector('#plannerLlmTest')?.addEventListener('click', testLlm);
-  }
-
-  async function testLlm() {
-    if (!llmState.configured || llmState.testing) return;
-    llmState.testing = true;
-    updateLlmTestUi();
-    try {
-      const result = await request('/api/planner/llm-test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      llmState.tested = true; llmState.ok = true; llmState.model = result.model; llmState.latencyMs = result.latencyMs; llmState.result = result.result; llmState.error = null;
-    } catch (error) {
-      llmState.tested = true; llmState.ok = false; llmState.error = error.message;
-    } finally { llmState.testing = false; updateLlmTestUi(); }
-  }
-
-  async function interpret() {
-    const input = document.querySelector('#plannerNaturalInput').value.trim();
-    if (!input) return;
-    const preview = document.querySelector('#plannerPreview');
-    preview.innerHTML = `<div class="planner-preview">${tr('\u6b63\u5728\u8bf7\u6c42\u672c\u5730\u6a21\u578b...', 'Requesting the local model...')}</div>`;
-    try {
-      const result = await request('/api/planner/interpret', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ input }) });
-      const clarification = result.clarification ? `<div class="planner-clarification">${escapeHtml(result.clarification)}</div>` : '';
-      const confirm = result.operations.length ? `<button class="primary-button" id="plannerConfirm">${tr('\u786e\u8ba4\u5199\u5165', 'Confirm and save')}</button>` : '';
-      preview.innerHTML = `<div class="planner-preview"><b>${tr('\u89e3\u6790\u7ed3\u679c', 'Parsed result')}</b>${clarification}<pre>${escapeHtml(JSON.stringify(result.operations, null, 2))}</pre>${confirm}<button class="ghost-button" id="plannerCancel">${tr('\u53d6\u6d88', 'Cancel')}</button></div>`;
-      document.querySelector('#plannerConfirm')?.addEventListener('click', async () => { try { await apply(result.operations, true); } catch (error) { showError(error.message); } });
-      document.querySelector('#plannerCancel').addEventListener('click', () => { preview.innerHTML = ''; });
-    } catch (error) { showError(error.message); }
-  }
-
-  function showError(message) {
-    const preview = document.querySelector('#plannerPreview');
-    if (preview) preview.innerHTML = `<div class="error-note">${tr('\u64cd\u4f5c\u5931\u8d25\uff1a', 'Operation failed: ')}${escapeHtml(message)}</div>`;
-  }
-
-  async function load() {
-    try { data = await request('/api/planner'); render(); } catch (error) { view.innerHTML = `<div class="panel error-note">${tr('Planner \u65e0\u6cd5\u52a0\u8f7d\uff1a', 'Planner could not load: ')}${escapeHtml(error.message)}</div>`; }
-  }
-
-  function keepNavigationLabel() {
-    if (!nav || nav.hidden) return;
-    const navLabel = tr('\u4e2a\u4eba\u8ba1\u5212', 'Personal Planner');
-    if (nav.lastChild && nav.lastChild.textContent !== navLabel) nav.lastChild.textContent = navLabel;
-    const pageTitle = document.querySelector('#pageTitle');
-    const title = tr('\u4e2a\u4eba\u5de5\u4f5c\u8ba1\u5212', 'Personal Planner');
-    if (pageTitle && view.classList.contains('active-view') && pageTitle.textContent !== title) pageTitle.textContent = title;
-  }
-
+  function llmTestResultHtml() { if (!llmState.tested) return `<div class="planner-llm-result muted">${tr('尚未执行连接测试。', 'Connection test has not run yet.')}</div>`; if (!llmState.ok) return `<div class="planner-llm-result failure"><b>${tr('LLM 测试失败', 'LLM test failed')}</b><small>${escapeHtml(llmState.error || tr('未知错误', 'Unknown error'))}</small></div>`; return `<div class="planner-llm-result success"><b>${tr('LLM 已成功连接', 'LLM connected successfully')}</b><small>${tr('模型', 'Model')}: ${escapeHtml(llmState.model || 'unknown')} · ${tr('延迟', 'Latency')}: ${llmState.latencyMs ?? '—'}ms</small></div>`; }
+  function updateLlmTestUi() { const badge = document.querySelector('#plannerLlmBadge'); const result = document.querySelector('#plannerLlmTestResult'); if (badge) { badge.className = `source-pill ${llmBadgeClass()}`; badge.innerHTML = `<i></i>${llmBadgeText()}`; } if (result) result.innerHTML = llmState.testing ? `<div class="planner-llm-result muted">${tr('正在测试本地模型…', 'Testing the local model…')}</div>` : llmTestResultHtml(); }
+  function bind() { document.querySelectorAll('[data-planner-tab]').forEach(button => button.addEventListener('click', () => { activePage = button.dataset.plannerTab; draftCategory = button.dataset.category || null; editingTaskId = null; render(); })); document.querySelector('#plannerSaveTask')?.addEventListener('click', async () => { const title = document.querySelector('#plannerTaskTitle').value.trim(); if (!title) return; const category = document.querySelector('#plannerTaskCategory').value; const operation = { type: editingTaskId ? 'update_task' : 'create_task', ...(editingTaskId ? { id: editingTaskId } : {}), title, category, dueAt: document.querySelector('#plannerTaskDue').value || null, priority: document.querySelector('#plannerTaskPriority').value, status: document.querySelector('#plannerTaskStatus').value }; try { await apply([operation]); editingTaskId = null; draftCategory = null; activePage = categoryId(category); render(); } catch (error) { showError(error.message); } }); document.querySelector('#plannerCancelEdit')?.addEventListener('click', () => { editingTaskId = null; render(); }); document.querySelector('#plannerAddCategory')?.addEventListener('click', async () => { const name = document.querySelector('#plannerNewCategory').value.trim(); if (!name) return; try { await apply([{ type: 'create_category', name }]); } catch (error) { showError(error.message); } }); document.querySelectorAll('.planner-remove-category').forEach(button => button.addEventListener('click', async () => { try { await apply([{ type: 'delete_category', name: button.dataset.category }]); } catch (error) { showError(error.message); } })); document.querySelector('#plannerAddLog')?.addEventListener('click', async () => { const input = document.querySelector('#plannerLogInput'); if (!input.value.trim()) return; try { await apply([{ type: 'log_progress', content: input.value.trim() }]); } catch (error) { showError(error.message); } }); document.querySelectorAll('.planner-complete').forEach(button => button.addEventListener('click', async () => { try { await apply([{ type: 'update_task', id: button.dataset.id, status: button.dataset.status === 'done' ? 'planned' : 'done' }]); } catch (error) { showError(error.message); } })); document.querySelectorAll('.planner-edit').forEach(button => button.addEventListener('click', () => { editingTaskId = button.dataset.id; activePage = 'add'; render(); })); document.querySelectorAll('.planner-delete').forEach(button => button.addEventListener('click', async () => { if (!window.confirm(tr('确定删除这个任务吗？此操作不可撤销。', 'Delete this task? This cannot be undone.'))) return; try { await apply([{ type: 'delete_task', id: button.dataset.id }]); } catch (error) { showError(error.message); } })); document.querySelector('#plannerInterpret')?.addEventListener('click', interpret); document.querySelector('#plannerLlmTest')?.addEventListener('click', testLlm); }
+  async function testLlm() { if (!llmState.configured || llmState.testing) return; llmState.testing = true; updateLlmTestUi(); try { const result = await request('/api/planner/llm-test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); Object.assign(llmState, { tested: true, ok: true, model: result.model, latencyMs: result.latencyMs, error: null }); } catch (error) { Object.assign(llmState, { tested: true, ok: false, error: error.message }); } finally { llmState.testing = false; updateLlmTestUi(); } }
+  async function interpret() { const input = document.querySelector('#plannerNaturalInput').value.trim(); const preview = document.querySelector('#plannerPreview'); if (!input || !preview) return; preview.innerHTML = `<div class="planner-preview">${tr('正在请求本地模型…', 'Requesting the local model…')}</div>`; try { const result = await request('/api/planner/interpret', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ input }) }); preview.innerHTML = `<div class="planner-preview"><b>${tr('解析结果', 'Parsed result')}</b><pre>${escapeHtml(JSON.stringify(result.operations, null, 2))}</pre>${result.operations.length ? `<button class="primary-button" id="plannerConfirm">${tr('确认写入', 'Confirm and save')}</button>` : ''}</div>`; document.querySelector('#plannerConfirm')?.addEventListener('click', async () => { try { await apply(result.operations, true); } catch (error) { showError(error.message); } }); } catch (error) { showError(error.message); } }
+  function showError(message) { const preview = document.querySelector('#plannerPreview'); if (preview) preview.innerHTML = `<div class="error-note">${tr('操作失败：', 'Operation failed: ')}${escapeHtml(message)}</div>`; }
+  async function load() { try { data = await request('/api/planner'); render(); } catch (error) { view.innerHTML = `<div class="panel error-note">${tr('Planner 无法加载：', 'Planner could not load: ')}${escapeHtml(error.message)}</div>`; } }
+  function keepNavigationLabel() { if (!nav || nav.hidden) return; const label = tr('个人计划', 'Personal Planner'); if (nav.lastChild) nav.lastChild.textContent = label; const title = document.querySelector('#pageTitle'); if (title && view.classList.contains('active-view')) title.textContent = label; }
   window.planner = { load };
-
-  async function initialize() {
-    try {
-      const status = await request('/api/planner/status');
-      if (!status.enabled) { nav.hidden = true; return; }
-      llmState.configured = status.llmConfigured;
-      nav.hidden = false;
-      keepNavigationLabel();
-      const navObserver = new MutationObserver(keepNavigationLabel);
-      navObserver.observe(nav, { childList: true, subtree: true, characterData: true });
-      const languageObserver = new MutationObserver(() => {
-        keepNavigationLabel();
-        if (document.documentElement.lang !== lastLanguage) { lastLanguage = document.documentElement.lang; render(); }
-      });
-      languageObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
-      nav.addEventListener('click', () => setTimeout(keepNavigationLabel, 0));
-      await load();
-    } catch (error) { nav.hidden = true; console.warn('Planner is unavailable:', error.message); }
-  }
-
+  async function initialize() { try { const status = await request('/api/planner/status'); if (!status.enabled) { nav.hidden = true; return; } llmState.configured = status.llmConfigured; nav.hidden = false; keepNavigationLabel(); new MutationObserver(() => { keepNavigationLabel(); if (document.documentElement.lang !== lastLanguage) { lastLanguage = document.documentElement.lang; render(); } }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] }); nav.addEventListener('click', () => setTimeout(keepNavigationLabel, 0)); await load(); } catch { nav.hidden = true; } }
   initialize();
 }());

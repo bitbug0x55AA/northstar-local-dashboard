@@ -19,7 +19,8 @@ function emptyPlanner() {
     projects: [],
     tasks: [],
     events: [],
-    progressLogs: []
+    progressLogs: [],
+    categories: ['安全技能学习与实验室', 'GitHub 开源项目', '工作绩效管理', '个人健身']
   };
 }
 
@@ -39,7 +40,8 @@ function readPlanner() {
       projects: Array.isArray(parsed.projects) ? parsed.projects : [],
       tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
       events: Array.isArray(parsed.events) ? parsed.events : [],
-      progressLogs: Array.isArray(parsed.progressLogs) ? parsed.progressLogs : []
+      progressLogs: Array.isArray(parsed.progressLogs) ? parsed.progressLogs : [],
+      categories: Array.isArray(parsed.categories) ? parsed.categories.map(item => asText(item)).filter(Boolean).slice(0, 30) : emptyPlanner().categories
     };
   } catch (error) {
     const parseError = new Error('Planner data could not be read');
@@ -130,6 +132,18 @@ function applyOperation(data, operation) {
   if (!operation || typeof operation !== 'object') throw new Error('Each planner operation must be an object');
   const type = asText(operation.type);
   if (type === 'create_task') return { type, item: createTask(data, operation) };
+  if (type === 'create_category') {
+    const name = required(operation.name, 'Category name');
+    data.categories = Array.isArray(data.categories) ? data.categories : [];
+    if (!data.categories.includes(name)) data.categories.push(name);
+    return { type, item: name };
+  }
+  if (type === 'delete_category') {
+    const name = required(operation.name, 'Category name');
+    if (data.tasks.some(task => task.category === name)) throw new Error('Move or delete tasks in this category before removing it');
+    data.categories = (data.categories || []).filter(category => category !== name);
+    return { type, item: name };
+  }
   if (type === 'create_event') return { type, item: createEvent(data, operation) };
   if (type === 'log_progress') {
     const log = {

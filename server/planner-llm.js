@@ -6,7 +6,7 @@ const { POLICY, validateProposal } = require('./planner-validator');
 
 const SYSTEM_PROMPT = fs.readFileSync(path.join(__dirname, 'planner-system-prompt.txt'), 'utf8').trim();
 const GITHUB_POLISH_VERSION = 'github-polish-v3';
-const GITHUB_POLISH_BATCH_SIZE = 4;
+const GITHUB_POLISH_BATCH_SIZE = 2;
 const DEFAULT_GITHUB_POLISH_TIMEOUT_MS = 90000;
 
 function githubPolishTimeoutMs() {
@@ -134,7 +134,7 @@ async function polishGithubIssues(issues, language = 'zh') {
     'Return JSON only in this shape: {"items":[{"sourceRef":"...","title":"...","notes":"...","category":"...","tags":["..."]}]}',
     'Keep exactly one output item for each input sourceRef. Never invent facts, dates, priorities, status, IDs, or repository names.',
     'The title should be a clear, action-oriented task title, preserving the issue number prefix.',
-    'The notes should be a concise 1-3 sentence execution-oriented summary, followed by the original GitHub URL and labels when present.',
+    'The notes should be a concise 1-2 sentence execution-oriented summary, no more than 240 characters, followed by the original GitHub URL and labels when present.',
     'Use category for a short grouping such as architecture, bugfix, feature, security, testing, documentation, maintenance, or research.',
     'Extract 2-5 useful tags for technology, domain, stage, or risk. Do not invent tags unsupported by the issue.',
     `Write the polished text in ${language === 'en' ? 'English' : 'Simplified Chinese'}, while keeping code names and issue numbers unchanged.`
@@ -153,7 +153,7 @@ async function polishGithubIssues(issues, language = 'zh') {
       title: String(issue.title).slice(0, 300),
       labels: (issue.labels || []).slice(0, 8),
       url: issue.url || null,
-      body: issue.body ? String(issue.body).slice(0, 1200) : null
+      body: issue.body ? String(issue.body).slice(0, 600) : null
     }));
     try {
       const isOllamaApi = /\/api\/chat(?:\?|$)/i.test(endpoint);

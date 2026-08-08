@@ -80,6 +80,8 @@ function normalizeOperation(input, source) {
     if (!['title', 'notes', 'status', 'priority', 'dueAt', 'projectId', 'category', 'tags', 'parentId'].some(key => key in output)) throw new Error('Task update has no editable fields');
   } else if (type === 'delete_task') {
     output.id = boundedText(output.id, 'Task id', true);
+  } else if (type === 'create_category' || type === 'delete_category') {
+    output.name = boundedText(output.name, 'Category name', true, 80);
   }
 
   output.source = normalizedSource(output.source, source);

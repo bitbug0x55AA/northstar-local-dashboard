@@ -9,7 +9,9 @@
     "create_event": ["title", "notes", "startAt", "endAt", "source"],
     "log_progress": ["content", "projectId", "occurredAt", "source"],
     "update_task": ["id", "title", "notes", "status", "priority", "dueAt", "projectId", "source", "sourceRef", "category", "tags", "parentId"],
-    "delete_task": ["id"]
+    "delete_task": ["id"],
+    "create_category": ["name"],
+    "delete_category": ["name"]
   },
   "allowedStatuses": ["planned", "in-progress", "done", "cancelled"],
   "allowedPriorities": ["low", "medium", "high"],

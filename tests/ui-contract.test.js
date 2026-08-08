@@ -27,7 +27,7 @@ test('every rendered button has an explicit interaction contract', () => {
   const buttonTags = sources.flatMap(source => source.content.match(/<button\b[^>]*>/g) || []);
   assert.ok(buttonTags.length >= 30, 'expected the full dashboard button surface to be scanned');
   const handledDataAttributes = ['data-view', 'data-github-subview', 'data-github-view', 'data-go', 'data-planner-tab', 'data-obs-tab'];
-  const handledClasses = ['ci-check', 'planner-complete', 'planner-edit', 'planner-delete', 'obs-action'];
+  const handledClasses = ['ci-check', 'planner-complete', 'planner-edit', 'planner-delete', 'planner-remove-category', 'obs-action'];
 
   for (const button of buttonTags) {
     const id = button.match(/\bid=["']([^"']+)["']/)?.[1];
