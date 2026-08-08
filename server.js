@@ -5,6 +5,7 @@ const https = require('https');
 const { spawn } = require('child_process');
 const { readPlanner, applyOperations, syncGithubToPlanner } = require('./server/planner-store');
 const { interpretPlannerInput, polishGithubIssues } = require('./server/planner-llm');
+const { recordEvent, listEvents, acknowledgeEvent, summarize } = require('./server/observability-store');
 
 const PORT = Number(process.env.PORT || 4173);
 const ROOT = __dirname;
@@ -505,6 +506,23 @@ function getLocalUsage() {
   const claude = usageFromPath('local', claudePath, Number(process.env.CLAUDE_BUDGET_TOKENS || 3600000));
   const daily = codex.daily.map((value, index) => value + (claude.daily[index] || 0));
   const models = mergeModels([codex.models, claude.models]);
+  for (const [provider, usage] of [['codex', codex], ['claude-code', claude]]) {
+    const usedPercent = usage.limits?.primary?.usedPercent;
+    if (Number.isFinite(Number(usedPercent)) && usedPercent >= 80) {
+      const threshold = usedPercent >= 95 ? 95 : 80;
+      recordEvent({
+        id: `usage-${provider}-${threshold}-${dateKey(new Date())}`,
+        tab: 'usage',
+        level: usedPercent >= 95 ? 'critical' : 'warning',
+        source: provider,
+        eventType: 'quota_threshold',
+        message: `${provider === 'codex' ? 'Codex' : 'Claude Code'} usage reached ${Math.round(usedPercent)}% of its observed quota.`,
+        details: { usedPercent: Math.round(usedPercent), threshold, windowMinutes: usage.limits.primary.windowMinutes, resetsAt: usage.limits.primary.resetsAt },
+        status: 'open',
+        ruleId: `USAGE-QUOTA-${threshold}`
+      });
+    }
+  }
   return { codex, claude, daily, models, fetchedAt: new Date().toISOString() };
 }
 
@@ -570,6 +588,24 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, getLocalUsage());
       return;
     }
+    if (req.method === 'GET' && req.url.startsWith('/api/observability')) {
+      const query = new URL(req.url, `http://127.0.0.1:${PORT}`).searchParams;
+      const events = listEvents({ tab: query.get('tab') || 'all', level: query.get('level') || 'all', status: query.get('status') || 'all', q: query.get('q') || '' });
+      sendJson(res, 200, { events, summary: summarize(events), fetchedAt: new Date().toISOString() });
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/api/observability/events') {
+      assertLocalOrigin(req);
+      const body = JSON.parse(await readBody(req) || '{}');
+      sendJson(res, 201, { event: recordEvent(body) });
+      return;
+    }
+    if (req.method === 'PATCH' && req.url === '/api/observability/events') {
+      assertLocalOrigin(req);
+      const body = JSON.parse(await readBody(req) || '{}');
+      sendJson(res, 200, { event: acknowledgeEvent(String(body.id || ''), String(body.status || '')) });
+      return;
+    }
     if (req.method === 'GET' && req.url === '/api/planner/status') {
       sendJson(res, 200, {
         enabled: PLANNER_ENABLED,
@@ -632,6 +668,7 @@ const server = http.createServer(async (req, res) => {
       assertLocalOrigin(req);
       const startedAt = Date.now();
       const result = await interpretPlannerInput('测试连接：请记录“完成本地 LLM 接入测试”，不要创建日程。');
+      recordEvent({ tab: 'llm', level: 'info', source: 'ollama', eventType: 'inference', message: 'Local LLM connection test completed.', details: { model: process.env.NORTHSTAR_LLM_MODEL || null, latencyMs: Date.now() - startedAt }, status: 'resolved' });
       sendJson(res, 200, {
         ok: true,
         model: process.env.NORTHSTAR_LLM_MODEL || null,
