@@ -2,10 +2,14 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const { spawn } = require('child_process');
 
 const PORT = Number(process.env.PORT || 4173);
 const ROOT = __dirname;
 const HOME = process.env.USERPROFILE || process.env.HOME || '';
+const LOCAL_ORIGINS = new Set([`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`]);
+const CREDENTIAL_DIR = process.platform === 'win32' && HOME ? path.join(HOME, 'AppData', 'Roaming', 'Northstar') : '';
+const CREDENTIAL_FILE = CREDENTIAL_DIR ? path.join(CREDENTIAL_DIR, 'github-token.dpapi') : '';
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -59,6 +63,58 @@ function githubRequest({ method = 'GET', route, token, body }) {
     if (payload) request.write(payload);
     request.end();
   });
+}
+
+function runPowerShell(script, environment = {}) {
+  return new Promise((resolve, reject) => {
+    if (process.platform !== 'win32') {
+      reject(new Error('Windows DPAPI credential storage is only available on Windows'));
+      return;
+    }
+    const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], {
+      windowsHide: true,
+      env: { ...process.env, ...environment }
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', () => reject(new Error('Unable to access Windows credential protection')));
+    child.on('close', code => {
+      if (code === 0) resolve(stdout.trim());
+      else reject(new Error('Windows credential protection failed'));
+    });
+  });
+}
+
+async function protectGithubToken(token) {
+  if (!CREDENTIAL_FILE) throw new Error('Windows DPAPI credential storage is unavailable');
+  const encoded = await runPowerShell(
+    "$bytes=[Text.Encoding]::UTF8.GetBytes($env:NORTHSTAR_TOKEN); $protected=[Security.Cryptography.ProtectedData]::Protect($bytes,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser); [Convert]::ToBase64String($protected)",
+    { NORTHSTAR_TOKEN: token }
+  );
+  fs.mkdirSync(CREDENTIAL_DIR, { recursive: true });
+  const tempFile = `${CREDENTIAL_FILE}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(tempFile, encoded, { encoding: 'ascii', mode: 0o600 });
+    fs.renameSync(tempFile, CREDENTIAL_FILE);
+  } finally {
+    try { if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile); } catch {}
+  }
+}
+
+async function readGithubToken() {
+  if (!CREDENTIAL_FILE || !fs.existsSync(CREDENTIAL_FILE)) return '';
+  const encoded = fs.readFileSync(CREDENTIAL_FILE, 'ascii').trim();
+  if (!encoded) return '';
+  return runPowerShell(
+    "$protected=[Convert]::FromBase64String($env:NORTHSTAR_PROTECTED_TOKEN); $bytes=[Security.Cryptography.ProtectedData]::Unprotect($protected,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser); [Text.Encoding]::UTF8.GetString($bytes)",
+    { NORTHSTAR_PROTECTED_TOKEN: encoded }
+  );
+}
+
+function deleteGithubToken() {
+  if (CREDENTIAL_FILE && fs.existsSync(CREDENTIAL_FILE)) fs.unlinkSync(CREDENTIAL_FILE);
 }
 
 function githubTextRequest({ route, token, redirects = 2 }) {
@@ -163,7 +219,7 @@ async function fetchRepo(config) {
 }
 
 async function getGithub(body) {
-  const token = String(body.token || '').trim();
+  const token = String(body.token || '').trim() || await readGithubToken();
   const owner = String(body.owner || '').trim();
   const repos = Array.isArray(body.repos) ? body.repos : [];
   if (!owner || !repos.length) throw new Error('Configure a GitHub owner and at least one repository');
@@ -181,12 +237,31 @@ async function getGithub(body) {
 
 function sendJson(res, status, data) {
   const body = JSON.stringify(data);
+  setSecurityHeaders(res);
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(body);
 }
 
+function setSecurityHeaders(res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
+}
+
+function assertLocalOrigin(req) {
+  const origin = req.headers.origin;
+  if (origin && !LOCAL_ORIGINS.has(origin)) {
+    const error = new Error('Requests must originate from the local dashboard');
+    error.statusCode = 403;
+    throw error;
+  }
+}
+
 async function getGithubCi(body) {
-  const token = String(body.token || '').trim();
+  const token = String(body.token || '').trim() || await readGithubToken();
   const owner = String(body.owner || '').trim();
   const repo = String(body.repo || '').trim();
   const runId = String(body.runId || '').trim();
@@ -426,7 +501,8 @@ function serveStatic(req, res) {
   if (!filePath.startsWith(ROOT) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
     res.writeHead(404); res.end('Not found'); return;
   }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
+  setSecurityHeaders(res);
+  res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
   fs.createReadStream(filePath).pipe(res);
 }
 
@@ -436,12 +512,29 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, name: 'Northstar', port: PORT });
       return;
     }
+    if (req.method === 'POST' && req.url === '/api/github-token') {
+      assertLocalOrigin(req);
+      const body = JSON.parse(await readBody(req) || '{}');
+      const token = String(body.token || '').trim();
+      if (!token || token.length > 500) throw new Error('A valid GitHub token is required');
+      await protectGithubToken(token);
+      sendJson(res, 200, { ok: true, stored: true });
+      return;
+    }
+    if (req.method === 'DELETE' && req.url === '/api/github-token') {
+      assertLocalOrigin(req);
+      deleteGithubToken();
+      sendJson(res, 200, { ok: true, stored: false });
+      return;
+    }
     if (req.method === 'POST' && req.url === '/api/github') {
+      assertLocalOrigin(req);
       const body = JSON.parse(await readBody(req) || '{}');
       sendJson(res, 200, await getGithub(body));
       return;
     }
     if (req.method === 'POST' && req.url === '/api/github-ci') {
+      assertLocalOrigin(req);
       const body = JSON.parse(await readBody(req) || '{}');
       sendJson(res, 200, await getGithubCi(body));
       return;
@@ -451,13 +544,14 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method === 'POST' && req.url === '/api/shutdown') {
+      assertLocalOrigin(req);
       sendJson(res, 200, { ok: true, message: 'Northstar is shutting down.' });
       setTimeout(() => server.close(() => process.exit(0)), 100);
       return;
     }
     serveStatic(req, res);
   } catch (error) {
-    sendJson(res, 400, { error: error.message || 'Unknown error' });
+    sendJson(res, error.statusCode || 400, { error: error.message || 'Unknown error' });
   }
 });
 

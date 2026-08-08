@@ -24,7 +24,7 @@ Then open `http://127.0.0.1:4173`.
 - GitHub: repository overview, issues, recent releases, latest GitHub Actions CI status, failed-job inspection, and an issue-label planning board.
 - AI usage: local Codex / Claude Code usage, today and month totals, sessions, 14-day trend, model distribution, and visible subscription-limit snapshots.
 - Settings: display name, UI language, GitHub owner, repository list, and optional read-only GitHub token.
-- Local-first operation: the server listens only on `127.0.0.1`; settings and usage summaries are stored in browser `localStorage` and are not written to the repository.
+- Local-first operation: the server listens only on `127.0.0.1`; non-secret settings and usage summaries are stored in browser `localStorage` and are not written to the repository. On Windows, the GitHub token is stored by the local service using the current user's DPAPI protection and is not stored in browser storage.
 
 ## GitHub Token Recommendation
 
@@ -38,7 +38,9 @@ Public repositories can usually be monitored without a token. For private reposi
 ## Privacy Notes For Open Source Use
 
 - The server listens only on `127.0.0.1` and does not bind to a public network interface.
-- GitHub configuration, tokens, and usage summaries are stored in browser `localStorage`; they are not written to repository files.
+- GitHub owner/repository settings and usage summaries are stored in browser `localStorage`; the GitHub token is deliberately excluded from browser storage and repository files. On Windows it is persisted only as a DPAPI-protected blob under the user's roaming application data.
+- The browser sends the token only when saving it to the local service; subsequent GitHub and CI requests omit it and the local service retrieves it from DPAPI.
+- API responses include browser security headers, and state-changing local API routes reject requests with a non-local `Origin`.
 - Automatic sync sends GitHub owner, repository names, and token only to the local `/api/github` endpoint. The local service then calls the GitHub API.
 - AI usage is read from local logs and is not uploaded to GitHub.
 - `/api/usage` returns only aggregated tokens, sessions, model distribution, trends, and visible limit snapshots. It does not return local `.codex` / `.claude` paths or raw log content.

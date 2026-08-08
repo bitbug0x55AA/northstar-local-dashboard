@@ -7,7 +7,9 @@ const DEMO = {
   ], fetchedAt: null
 };
 const DEMO_USAGE = { codex:{todayTokens:184000,monthTokens:2960000,budgetTokens:4400000,sessions:17,source:'demo',reset:'2d 14h'}, claude:{todayTokens:127000,monthTokens:2180000,budgetTokens:3600000,sessions:12,source:'demo',reset:'—'}, daily:[36,52,44,61,48,76,68,83,70,88,64,92,74,82], models:[{name:'Claude Sonnet',value:48,color:'blue'},{name:'GPT-5-Codex',value:37,color:'teal'},{name:'Claude Opus',value:15,color:'amber'}] };
-const state = { view:'overview', githubView:'all', selectedRepo:'all', github:load('northstar.github',DEMO), usage:load('northstar.usage',DEMO_USAGE), config:load('northstar.config',{owner:'',repos:'',token:'',profileName:'Taofan',language:'zh'}), lastSync:null };
+const CONFIG_DEFAULTS = {owner:'',repos:'',token:'',profileName:'Taofan',language:'zh'};
+const state = { view:'overview', githubView:'all', selectedRepo:'all', github:load('northstar.github',DEMO), usage:load('northstar.usage',DEMO_USAGE), config:loadConfig(), lastSync:null };
+let credentialReady = Promise.resolve();
 const $ = selector => document.querySelector(selector);
 const isEnglish = () => state.config?.language === 'en';
 const t = (zh,en) => isEnglish() ? en : zh;
@@ -16,12 +18,22 @@ const short = n => n >= 1000000 ? `${(n/1000000).toFixed(1)}M` : n >= 1000 ? `${
 const dateFmt = value => value ? new Intl.DateTimeFormat(isEnglish()?'en-US':'zh-CN',{month:'short',day:'numeric'}).format(new Date(value)) : dash;
 const ago = value => { if(!value) return dash; const hours=Math.max(1,Math.round((Date.now()-new Date(value))/3600000)); return hours<24?`${hours}h ago`:`${Math.round(hours/24)}d ago`; };
 function load(key,fallback){try{return JSON.parse(localStorage.getItem(key))||fallback;}catch{return fallback;}}
-function save(key,value){localStorage.setItem(key,JSON.stringify(value));}
+function save(key,value){if(key==='northstar.config'&&value&&typeof value==='object'){const {token:ignored,...safeValue}=value;if(ignored){credentialReady=fetch('/api/github-token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:ignored})}).catch(()=>{});}value=safeValue;}localStorage.setItem(key,JSON.stringify(value));}
+const nativeFetch=window.fetch.bind(window);
+window.fetch=async (input,init={})=>{const url=typeof input==='string'?input:input.url;if(['/api/github','/api/github-ci'].includes(url)){await credentialReady;const nextInit={...init};if(nextInit.body){try{const body=JSON.parse(nextInit.body);delete body.token;nextInit.body=JSON.stringify(body);}catch{}}return nativeFetch(input,nextInit);}return nativeFetch(input,init);};
+function loadConfig(){
+  const stored=load('northstar.config',CONFIG_DEFAULTS)||CONFIG_DEFAULTS;
+  const {token:ignored,...persisted}=stored;
+  const config={...CONFIG_DEFAULTS,...persisted,token:''};
+  save('northstar.config',{...persisted,token:undefined});
+  return config;
+}
 function toast(message){const node=$('#toast');node.textContent=message;node.classList.add('show');setTimeout(()=>node.classList.remove('show'),2800);}
 function pct(value,total){return total?Math.min(100,Math.round(value/total*100)):0;}
 function profileName(){return state.config.profileName||'Taofan';}
 function greeting(){const hour=new Date().getHours();if(hour<5)return t('夜深了','Late night');if(hour<12)return t('早上好','Good morning');if(hour<18)return t('下午好','Good afternoon');return t('晚上好','Good evening');}
 function escapeHtml(value){return String(value??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
+function safeExternalUrl(value){try{const url=new URL(String(value||''));return url.protocol==='https:'&&['github.com','www.github.com'].includes(url.hostname)?url.href:'#';}catch{return '#';}}
 function header(eyebrow,title,sub,action=''){return `<div class="page-heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${sub}</p></div>${action}</div>`;}
 function metric(label,value,foot,cls=''){return `<div class="metric-card"><div class="metric-label">${label}</div><div class="metric-value">${value}</div><div class="metric-foot ${cls}">${foot}</div></div>`;}
 function render(){renderNav();renderProfile();renderOverview();renderGithub();renderUsage();renderSettings();renderTechnicalLabels();}
