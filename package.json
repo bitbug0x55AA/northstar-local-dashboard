@@ -4,6 +4,9 @@
   "private": true,
   "description": "Local Windows 11 dashboard for GitHub and coding assistant usage.",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "lint": "node tests/check-source.js",
+    "test": "node tests/run-tests.js",
+    "ci": "npm run lint && npm test"
   }
 }

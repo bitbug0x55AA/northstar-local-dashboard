@@ -19,6 +19,16 @@ npm start
 
 Then open `http://127.0.0.1:4173`.
 
+## Continuous Integration
+
+GitHub Actions runs the full verification suite on every push and pull request, across Node.js 20 and 22 on Ubuntu and Windows. Run the same checks locally with:
+
+```powershell
+npm run ci
+```
+
+The suite has no third-party test dependency and covers JavaScript syntax, referenced static assets, Planner policy and GitHub sync regressions, Observability data redaction and persistence, read-only Merge Orchestrator analysis, HTTP API behavior including local-origin and static-file access boundaries, core language-switch labels, a dead-button contract for every rendered button, and the GitHub sidebar parent/child expand-collapse contract. A separate CodeQL workflow analyzes JavaScript on pushes, pull requests, manual runs, and weekly scheduled scans.
+
 ## Current Features
 
 - GitHub: repository overview, issues, recent releases, latest GitHub Actions CI status, failed-job inspection, and an issue-label planning board.

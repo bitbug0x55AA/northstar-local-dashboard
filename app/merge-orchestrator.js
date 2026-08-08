@@ -222,6 +222,7 @@
 
   const observer = new MutationObserver(() => {
     removeGithubTabs();
+    if (!view.classList.contains('active-view')) return;
     if (rendering || activeSubpage !== 'orchestrator') return;
     if (!view.querySelector('.merge-page')) {
       rendering = true;
