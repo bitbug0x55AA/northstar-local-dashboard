@@ -1,0 +1,9 @@
+{
+  "name": "northstar-local-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local Windows 11 dashboard for GitHub and coding assistant usage.",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
