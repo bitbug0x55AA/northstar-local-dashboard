@@ -20,6 +20,7 @@
           <button class="nav-item planner-nav" data-view="planner" hidden><span class="nav-icon">*</span>Personal Planner</button>
           <button class="nav-item" data-view="github"><span class="nav-icon">◉</span>GitHub Projects</button>
           <button class="nav-item" data-view="usage"><span class="nav-icon">◌</span>AI Usage</button>
+          <button class="nav-item" data-view="observability"><span class="nav-icon">⚠</span>Logs &amp; Audit</button>
           <button class="nav-item" data-view="settings"><span class="nav-icon">⚙</span>Settings</button>
         </nav>
         <div class="sidebar-bottom">
@@ -36,12 +37,14 @@
         <section id="view-overview" class="view active-view"></section>
         <section id="view-github" class="view"></section>
         <section id="view-usage" class="view"></section>
+        <section id="view-observability" class="view"></section>
         <section id="view-planner" class="view"></section>
         <section id="view-settings" class="view"></section>
       </main>
     </div>
     <div id="toast" class="toast" role="status"></div>
     <script src="/app/app.js"></script>
+    <script src="/app/observability.js"></script>
     <link rel="stylesheet" href="/app/planner.css" />
     <script src="/app/planner.js"></script>
   </body>

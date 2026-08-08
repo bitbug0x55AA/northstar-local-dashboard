@@ -61,3 +61,6 @@ $('#refreshButton').addEventListener('click',async()=>{const button=$('#refreshB
 render();
 setTimeout(autoSync,10000);
 setInterval(autoSync,5*60*1000);
+
+// Keep the navigation vocabulary aligned with the observability center.
+function renderNav(){const titles={overview:t('总览','Overview'),github:t('GitHub 项目','GitHub Projects'),usage:t('AI 使用量','AI Usage'),observability:t('日志与审计','Logs & Audit'),settings:t('设置','Settings')};$('#pageTitle').textContent=titles[state.view];document.documentElement.lang=isEnglish()?'en':'zh-CN';document.querySelector('.breadcrumbs span').textContent=t('工作台','Workspace');document.querySelectorAll('.nav-item').forEach(item=>{item.classList.toggle('active',item.dataset.view===state.view);item.lastChild.textContent=titles[item.dataset.view];});if(!state.lastSync){$('#syncLabel').textContent=state.github.fetchedAt?t('GitHub 已连接','GitHub connected'):t('演示数据','Demo data');$('#syncTime').textContent=t('等待同步','Waiting for sync');$('#lastSync').textContent=t('演示数据','Demo data');}document.querySelectorAll('.view').forEach(view=>view.classList.toggle('active-view',view.id===`view-${state.view}`));}
