@@ -5,6 +5,7 @@ const https = require('https');
 const { spawn } = require('child_process');
 const { readPlanner, applyOperations, syncGithubToPlanner } = require('./server/planner-store');
 const { interpretPlannerInput, polishGithubIssues } = require('./server/planner-llm');
+const { recordEvent, listEvents, acknowledgeEvent, summarize } = require('./server/observability-store');
 
 const PORT = Number(process.env.PORT || 4173);
 const ROOT = __dirname;
@@ -590,6 +591,24 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && req.url === '/api/usage') {
       sendJson(res, 200, getLocalUsage());
+      return;
+    }
+    if (req.method === 'GET' && req.url.startsWith('/api/observability')) {
+      const query = new URL(req.url, `http://127.0.0.1:${PORT}`).searchParams;
+      const events = listEvents({ tab: query.get('tab') || 'all', level: query.get('level') || 'all', status: query.get('status') || 'all', q: query.get('q') || '' });
+      sendJson(res, 200, { events, summary: summarize(events), fetchedAt: new Date().toISOString() });
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/api/observability/events') {
+      assertLocalOrigin(req);
+      const body = JSON.parse(await readBody(req) || '{}');
+      sendJson(res, 201, { event: recordEvent(body) });
+      return;
+    }
+    if (req.method === 'PATCH' && req.url === '/api/observability/events') {
+      assertLocalOrigin(req);
+      const body = JSON.parse(await readBody(req) || '{}');
+      sendJson(res, 200, { event: acknowledgeEvent(String(body.id || ''), String(body.status || '')) });
       return;
     }
     if (req.method === 'GET' && req.url === '/api/planner/status') {
