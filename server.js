@@ -528,6 +528,23 @@ function getLocalUsage() {
   const claude = usageFromPath('local', claudePath, Number(process.env.CLAUDE_BUDGET_TOKENS || 3600000));
   const daily = codex.daily.map((value, index) => value + (claude.daily[index] || 0));
   const models = mergeModels([codex.models, claude.models]);
+  for (const [provider, usage] of [['codex', codex], ['claude-code', claude]]) {
+    const usedPercent = usage.limits?.primary?.usedPercent;
+    if (Number.isFinite(Number(usedPercent)) && usedPercent >= 80) {
+      const threshold = usedPercent >= 95 ? 95 : 80;
+      recordEvent({
+        id: `usage-${provider}-${threshold}-${dateKey(new Date())}`,
+        tab: 'usage',
+        level: usedPercent >= 95 ? 'critical' : 'warning',
+        source: provider,
+        eventType: 'quota_threshold',
+        message: `${provider === 'codex' ? 'Codex' : 'Claude Code'} usage reached ${Math.round(usedPercent)}% of its observed quota.`,
+        details: { usedPercent: Math.round(usedPercent), threshold, windowMinutes: usage.limits.primary.windowMinutes, resetsAt: usage.limits.primary.resetsAt },
+        status: 'open',
+        ruleId: `USAGE-QUOTA-${threshold}`
+      });
+    }
+  }
   return { codex, claude, daily, models, fetchedAt: new Date().toISOString() };
 }
 
@@ -673,6 +690,7 @@ const server = http.createServer(async (req, res) => {
       assertLocalOrigin(req);
       const startedAt = Date.now();
       const result = await interpretPlannerInput('测试连接：请记录“完成本地 LLM 接入测试”，不要创建日程。');
+      recordEvent({ tab: 'llm', level: 'info', source: 'ollama', eventType: 'inference', message: 'Local LLM connection test completed.', details: { model: process.env.NORTHSTAR_LLM_MODEL || null, latencyMs: Date.now() - startedAt }, status: 'resolved' });
       sendJson(res, 200, {
         ok: true,
         model: process.env.NORTHSTAR_LLM_MODEL || null,
