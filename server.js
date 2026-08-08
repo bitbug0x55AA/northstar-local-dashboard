@@ -5,6 +5,7 @@ const https = require('https');
 
 const PORT = Number(process.env.PORT || 4173);
 const ROOT = __dirname;
+const HOME = process.env.USERPROFILE || process.env.HOME || '';
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -122,6 +123,125 @@ function sendJson(res, status, data) {
   res.end(body);
 }
 
+function listJsonFiles(targetPath, limit = 600) {
+  if (!targetPath || !fs.existsSync(targetPath)) return [];
+  let stat;
+  try { stat = fs.statSync(targetPath); } catch { return []; }
+  if (stat.isFile()) return [targetPath];
+  const files = [];
+  const stack = [targetPath];
+  while (stack.length && files.length < limit) {
+    const dir = stack.pop();
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) stack.push(fullPath);
+      if (entry.isFile() && /\.(jsonl?|ndjson)$/i.test(entry.name)) files.push(fullPath);
+      if (files.length >= limit) break;
+    }
+  }
+  return files;
+}
+
+function readJsonRecords(filePath) {
+  let text;
+  try { text = fs.readFileSync(filePath, 'utf8'); } catch { return []; }
+  if (/\.jsonl$|\.ndjson$/i.test(filePath)) {
+    return text.split(/\r?\n/).filter(Boolean).flatMap(line => {
+      try { return [JSON.parse(line)]; } catch { return []; }
+    });
+  }
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [];
+  }
+}
+
+function numberFrom(record, names) {
+  for (const name of names) {
+    const value = name.split('.').reduce((current, key) => current && current[key], record);
+    if (Number.isFinite(Number(value))) return Number(value);
+  }
+  return 0;
+}
+
+function recordDate(record) {
+  const value = record.timestamp || record.created_at || record.createdAt || record.time || record.date;
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date : null;
+}
+
+function usageFromPath(sourceName, targetPath, budgetTokens) {
+  const files = listJsonFiles(targetPath);
+  const now = new Date();
+  const todayKey = now.toISOString().slice(0, 10);
+  const monthKey = now.toISOString().slice(0, 7);
+  const byDay = new Map();
+  const models = new Map();
+  const sessions = new Set();
+  let todayTokens = 0;
+  let monthTokens = 0;
+
+  for (const file of files) {
+    for (const record of readJsonRecords(file)) {
+      const total =
+        numberFrom(record, ['total_tokens', 'totalTokens', 'usage.total_tokens', 'message.usage.total_tokens']) ||
+        numberFrom(record, ['input_tokens', 'inputTokens', 'usage.input_tokens', 'message.usage.input_tokens']) +
+        numberFrom(record, ['output_tokens', 'outputTokens', 'usage.output_tokens', 'message.usage.output_tokens']) +
+        numberFrom(record, ['cache_creation_input_tokens', 'cache_read_input_tokens', 'usage.cache_creation_input_tokens', 'usage.cache_read_input_tokens']);
+      if (!total) continue;
+
+      let fileDate = new Date();
+      try { fileDate = fs.statSync(file).mtime; } catch {}
+      const date = recordDate(record) || fileDate;
+      const dayKey = date.toISOString().slice(0, 10);
+      byDay.set(dayKey, (byDay.get(dayKey) || 0) + total);
+      if (dayKey === todayKey) todayTokens += total;
+      if (dayKey.startsWith(monthKey)) monthTokens += total;
+
+      const model = record.model || record.modelName || record.message?.model;
+      if (model) models.set(model, (models.get(model) || 0) + total);
+      const session = record.session_id || record.sessionId || record.conversation_id || record.conversationId || file;
+      sessions.add(session);
+    }
+  }
+
+  const daily = Array.from({ length: 14 }, (_, index) => {
+    const date = new Date(now);
+    date.setDate(now.getDate() - (13 - index));
+    return Math.round((byDay.get(date.toISOString().slice(0, 10)) || 0) / 1000);
+  });
+  const modelTotal = Array.from(models.values()).reduce((sum, value) => sum + value, 0);
+  const colors = ['teal', 'blue', 'amber'];
+  return {
+    todayTokens,
+    monthTokens,
+    budgetTokens,
+    sessions: sessions.size,
+    source: files.length ? sourceName : 'missing',
+    reset: 'local',
+    daily,
+    models: Array.from(models.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, value], index) => ({
+      name,
+      value: modelTotal ? Math.round(value / modelTotal * 100) : 0,
+      color: colors[index % colors.length]
+    }))
+  };
+}
+
+function getLocalUsage() {
+  const codexPath = process.env.CODEX_USAGE_PATH || (HOME ? path.join(HOME, '.codex') : '');
+  const claudePath = process.env.CLAUDE_USAGE_PATH || (HOME ? path.join(HOME, '.claude') : '');
+  const codex = usageFromPath('local', codexPath, Number(process.env.CODEX_BUDGET_TOKENS || 4400000));
+  const claude = usageFromPath('local', claudePath, Number(process.env.CLAUDE_BUDGET_TOKENS || 3600000));
+  const daily = codex.daily.map((value, index) => value + (claude.daily[index] || 0));
+  const models = [...codex.models, ...claude.models].slice(0, 5);
+  return { codex, claude, daily, models, fetchedAt: new Date().toISOString(), paths: { codex: codexPath, claude: claudePath } };
+}
+
 function serveStatic(req, res) {
   const requested = req.url === '/' ? '/app/index.html' : req.url;
   const safePath = path.normalize(requested.split('?')[0]).replace(/^\.\.(\/|\\)/, '');
@@ -142,6 +262,15 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && req.url === '/api/github') {
       const body = JSON.parse(await readBody(req) || '{}');
       sendJson(res, 200, await getGithub(body));
+      return;
+    }
+    if (req.method === 'GET' && req.url === '/api/usage') {
+      sendJson(res, 200, getLocalUsage());
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/api/shutdown') {
+      sendJson(res, 200, { ok: true, message: 'Northstar is shutting down.' });
+      setTimeout(() => server.close(() => process.exit(0)), 100);
       return;
     }
     serveStatic(req, res);
