@@ -185,6 +185,34 @@ function dateKey(date) {
   return `${year}-${month}-${day}`;
 }
 
+function normalizeLimitSnapshot(record) {
+  const limits = record.payload?.rate_limits || record.rate_limits || record.rateLimits;
+  if (!limits) return null;
+  const primaryReset = limits.primary?.resets_at ? new Date(limits.primary.resets_at * 1000).toISOString() : null;
+  const secondaryReset = limits.secondary?.resets_at ? new Date(limits.secondary.resets_at * 1000).toISOString() : null;
+  return {
+    planType: limits.plan_type || null,
+    limitId: limits.limit_id || null,
+    primary: limits.primary ? {
+      usedPercent: limits.primary.used_percent ?? null,
+      windowMinutes: limits.primary.window_minutes ?? null,
+      resetsAt: primaryReset
+    } : null,
+    secondary: limits.secondary ? {
+      usedPercent: limits.secondary.used_percent ?? null,
+      windowMinutes: limits.secondary.window_minutes ?? null,
+      resetsAt: secondaryReset
+    } : null,
+    credits: limits.credits ? {
+      hasCredits: limits.credits.has_credits ?? null,
+      unlimited: limits.credits.unlimited ?? null,
+      balance: limits.credits.balance ?? null
+    } : null,
+    rateLimitReached: limits.rate_limit_reached ?? null,
+    rateLimitReachedType: limits.rate_limit_reached_type ?? null
+  };
+}
+
 function usageFromPath(sourceName, targetPath, budgetTokens) {
   const files = listJsonFiles(targetPath);
   const now = new Date();
@@ -194,6 +222,8 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
   const models = new Map();
   const sessions = new Set();
   const modelBySession = new Map();
+  let limits = null;
+  let limitsAt = null;
   let todayTokens = 0;
   let monthTokens = 0;
 
@@ -207,6 +237,14 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
       if (recordModel) {
         currentModel = recordModel;
         modelBySession.set(currentSession, recordModel);
+      }
+      const snapshot = normalizeLimitSnapshot(record);
+      if (snapshot) {
+        const snapshotAt = recordDate(record) || limitsAt || new Date();
+        if (!limitsAt || snapshotAt >= limitsAt) {
+          limits = snapshot;
+          limitsAt = snapshotAt;
+        }
       }
       const total =
         numberFrom(record, ['payload.info.last_token_usage.total_tokens', 'total_tokens', 'totalTokens', 'usage.total_tokens', 'message.usage.total_tokens']) ||
@@ -249,7 +287,8 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
       value: modelTotal ? Math.round(value / modelTotal * 100) : 0,
       tokens: value,
       color: colors[index % colors.length]
-    }))
+    })),
+    limits: limits ? { ...limits, updatedAt: limitsAt ? limitsAt.toISOString() : null } : null
   };
 }
 
