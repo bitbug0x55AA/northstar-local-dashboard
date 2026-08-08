@@ -4,6 +4,7 @@
   if (!nav || !view) return;
 
   let data = { goals: [], projects: [], tasks: [], events: [], progressLogs: [] };
+  let activeTab = 'overview';
   let lastLanguage = document.documentElement.lang;
   const llmState = { configured: false, tested: false, ok: false, testing: false, model: null, latencyMs: null, result: null, error: null };
 
@@ -27,6 +28,7 @@
   }
 
   function render() {
+    activeTab = activeTab === 'input' ? 'input' : 'overview';
     const activeTasks = data.tasks.filter(task => task.status !== 'done' && task.status !== 'cancelled');
     const todayTasks = activeTasks.filter(task => task.dueAt && task.dueAt.slice(0, 10) === todayKey());
     const recentLogs = (data.progressLogs || []).slice(0, 6);
@@ -35,13 +37,29 @@
         <div><div class="eyebrow">PERSONAL OPERATING SYSTEM</div><h1>${tr('\u4e2a\u4eba\u5de5\u4f5c\u8ba1\u5212', 'Personal Planner')}</h1><p>${tr('\u672c\u5730\u4efb\u52a1\u3001\u8fdb\u5ea6\u65e5\u5fd7\u548c\u53ef\u9009\u7684\u81ea\u7136\u8bed\u8a00\u6574\u7406\u5165\u53e3\u3002', 'Local tasks, progress logs, and an optional natural-language planning assistant.')}</p></div>
         <span class="source-pill"><i></i> LOCAL PLANNER</span>
       </div>
+      <div class="planner-tabs" role="tablist" aria-label="${tr('\u8ba1\u5212\u9875\u9762\u6a21\u5f0f', 'Planner modes')}">
+        <button class="planner-tab ${activeTab === 'overview' ? 'active' : ''}" data-planner-tab="overview" role="tab" aria-selected="${activeTab === 'overview'}"><span class="planner-tab-icon">◈</span>${tr('\u8ba1\u5212\u603b\u89c8', 'Plan overview')}<small>${tr('\u4efb\u52a1\u3001\u8fdb\u5ea6\u4e0e\u65e5\u7a0b', 'Tasks, progress, events')}</small></button>
+        <button class="planner-tab ${activeTab === 'input' ? 'active' : ''}" data-planner-tab="input" role="tab" aria-selected="${activeTab === 'input'}"><span class="planner-tab-icon">＋</span>${tr('\u66f4\u65b0\u8ba1\u5212', 'Update plan')}<small>${tr('\u5f55\u5165\u65b0\u4efb\u52a1\u4e0e\u8fdb\u5ea6', 'Add tasks and progress')}</small></button>
+      </div>
+      <div class="planner-tab-panel ${activeTab === 'overview' ? 'active' : ''}" data-planner-panel="overview" role="tabpanel">
       <div class="metric-grid planner-metrics">
         <div class="metric-card"><div class="metric-label">${tr('\u4eca\u65e5\u4efb\u52a1', 'Today')}</div><div class="metric-value">${todayTasks.length}</div><div class="metric-foot good">${tr('\u6709\u660e\u786e\u65e5\u671f\u7684\u5f85\u529e', 'Tasks with a date')}</div></div>
         <div class="metric-card"><div class="metric-label">${tr('\u8fdb\u884c\u4e2d', 'In Progress')}</div><div class="metric-value">${data.tasks.filter(task => task.status === 'in-progress').length}</div><div class="metric-foot">${tr('\u5f53\u524d\u5de5\u4f5c\u7126\u70b9', 'Current work focus')}</div></div>
         <div class="metric-card"><div class="metric-label">${tr('\u5f85\u5904\u7406', 'Pending')}</div><div class="metric-value">${activeTasks.length}</div><div class="metric-foot">${tr('\u4e0d\u542b\u5df2\u5b8c\u6210\u4e8b\u9879', 'Excludes completed items')}</div></div>
         <div class="metric-card"><div class="metric-label">${tr('\u8fdb\u5ea6\u8bb0\u5f55', 'Progress Logs')}</div><div class="metric-value">${data.progressLogs.length}</div><div class="metric-foot">${tr('\u672c\u5730\u7ef4\u62a4', 'Stored locally')}</div></div>
       </div>
-      <div class="planner-grid">
+      <div class="planner-grid planner-output-grid">
+        <div class="planner-output-main">
+          <div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('\u5f53\u524d\u4efb\u52a1', 'Current tasks')}</div><div class="panel-subtitle">${tr('\u4f18\u5148\u5904\u7406\u8fd9\u4e9b\u53ef\u6267\u884c\u4e8b\u9879\u3002', 'The next actionable items in your plan.')}</div></div><span class="source-pill"><i></i>${activeTasks.length} ${tr('\u9879\u5f85\u529e', 'TO DO')}</span></div><div id="plannerTasks">${renderTasks(activeTasks)}</div></div>
+          <div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('\u8fdb\u5ea6\u65e5\u5fd7', 'Progress log')}</div><div class="panel-subtitle">${tr('\u4fdd\u7559\u201c\u6211\u662f\u600e\u4e48\u8d70\u5230\u73b0\u5728\u7684\u201d\u3002', 'Keep a record of how you got here.')}</div></div></div><div class="planner-log-list">${recentLogs.map(log => `<div class="planner-log"><span>${dateText(log.occurredAt)}</span><b>${escapeHtml(log.content)}</b></div>`).join('') || `<div class="empty">${tr('\u6682\u65e0\u8fdb\u5ea6\u8bb0\u5f55', 'No progress logs')}</div>`}</div></div>
+        </div>
+        <div>
+          <div class="panel planner-focus-card"><div class="panel-header"><div><div class="panel-title">${tr('\u4eca\u65e5\u7126\u70b9', 'Today\'s focus')}</div><div class="panel-subtitle">${tr('\u5148\u505a\u6700\u91cd\u8981\u7684\u4e8b\u3002', 'Start with what matters most.')}</div></div></div><div class="planner-focus-number">${todayTasks.length}</div><p>${tr('\u9879\u4efb\u52a1\u5b89\u6392\u5728\u4eca\u5929\u3002', 'tasks scheduled for today.')}</p><button class="primary-button" data-planner-tab="input">${tr('\u66f4\u65b0\u8ba1\u5212', 'Update plan')} →</button></div>
+          <div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('\u8fd1\u671f\u65e5\u7a0b', 'Upcoming events')}</div><div class="panel-subtitle">${tr('\u56fa\u5b9a\u65f6\u95f4\u4e8b\u9879', 'Fixed-time items')}</div></div></div><div id="plannerEvents">${renderEvents()}</div></div>
+        </div>
+      </div></div>
+      <div class="planner-tab-panel ${activeTab === 'input' ? 'active' : ''}" data-planner-panel="input" role="tabpanel">
+      <div class="planner-grid planner-input-grid">
         <div>
           <div class="panel planner-input-panel">
             <div class="panel-header"><div><div class="panel-title">${tr('\u81ea\u7136\u8bed\u8a00\u66f4\u65b0', 'Natural-language update')}</div><div class="panel-subtitle">${llmState.configured ? tr('\u672c\u5730\u6a21\u578b\u5df2\u914d\u7f6e\uff1b\u89e3\u6790\u7ed3\u679c\u4ecd\u9700\u786e\u8ba4\u3002', 'Local model configured; proposed changes still require confirmation.') : tr('\u672c\u5730\u6a21\u578b\u5c1a\u672a\u914d\u7f6e\uff0c\u53ef\u5148\u4f7f\u7528\u624b\u52a8\u4efb\u52a1\u3002', 'Local model is not configured; manual tasks are still available.')}</div></div><span id="plannerLlmBadge" class="source-pill ${llmBadgeClass()}"><i></i>${llmBadgeText()}</span></div>
@@ -50,13 +68,12 @@
             <div id="plannerLlmTestResult">${llmTestResultHtml()}</div><div id="plannerPreview"></div>
           </div>
           <div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('\u5feb\u901f\u6dfb\u52a0\u4efb\u52a1', 'Quick add task')}</div><div class="panel-subtitle">${tr('\u5148\u5efa\u7acb\u53ef\u6267\u884c\u7684\u672c\u5730\u8ba1\u5212\u3002', 'Start with an actionable local plan.')}</div></div></div><div class="planner-form"><input id="plannerTaskTitle" placeholder="${tr('\u4efb\u52a1\u540d\u79f0', 'Task title')}" /><input id="plannerTaskDue" type="datetime-local" /><select id="plannerTaskPriority"><option value="medium">${tr('\u666e\u901a\u4f18\u5148\u7ea7', 'Medium priority')}</option><option value="high">${tr('\u9ad8\u4f18\u5148\u7ea7', 'High priority')}</option><option value="low">${tr('\u4f4e\u4f18\u5148\u7ea7', 'Low priority')}</option></select><button class="primary-button" id="plannerAddTask">${tr('\u6dfb\u52a0\u4efb\u52a1', 'Add task')}</button></div></div>
-          <div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('\u4efb\u52a1\u5217\u8868', 'Task list')}</div><div class="panel-subtitle">${tr('\u624b\u52a8\u521b\u5efa\u7684\u4efb\u52a1\u4e0e\u672a\u6765 LLM \u63d0\u6848\u5171\u7528\u540c\u4e00\u6570\u636e\u6a21\u578b\u3002', 'Manual tasks and future LLM proposals share one data model.')}</div></div></div><div id="plannerTasks">${renderTasks(activeTasks)}</div></div>
         </div>
         <div>
-          <div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('\u8fdb\u5ea6\u65e5\u5fd7', 'Progress log')}</div><div class="panel-subtitle">${tr('\u4fdd\u7559\u201c\u6211\u662f\u600e\u4e48\u8d70\u5230\u73b0\u5728\u7684\u201d\u3002', 'Keep a record of how you got here.')}</div></div></div><textarea id="plannerLogInput" class="planner-log-input" placeholder="${tr('\u8bb0\u5f55\u4eca\u5929\u5b8c\u6210\u4e86\u4ec0\u4e48...', 'What did you complete today?...')}"></textarea><button class="ghost-button planner-log-button" id="plannerAddLog">${tr('\u8bb0\u5f55\u8fdb\u5ea6', 'Log progress')}</button><div class="planner-log-list">${recentLogs.map(log => `<div class="planner-log"><span>${dateText(log.occurredAt)}</span><b>${escapeHtml(log.content)}</b></div>`).join('') || `<div class="empty">${tr('\u6682\u65e0\u8fdb\u5ea6\u8bb0\u5f55', 'No progress logs')}</div>`}</div></div>
-          <div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('\u8fd1\u671f\u65e5\u7a0b', 'Upcoming events')}</div><div class="panel-subtitle">${tr('\u56fa\u5b9a\u65f6\u95f4\u4e8b\u9879\u6682\u65f6\u72ec\u7acb\u4e8e\u4efb\u52a1\u3002', 'Fixed-time items are separate from tasks for now.')}</div></div></div><div id="plannerEvents">${renderEvents()}</div></div>
+          <div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('\u8bb0\u5f55\u8fdb\u5ea6', 'Log progress')}</div><div class="panel-subtitle">${tr('\u8bb0\u4e0b\u4f60\u4eca\u5929\u5b8c\u6210\u4e86\u4ec0\u4e48\u3002', 'Capture what moved forward today.')}</div></div></div><textarea id="plannerLogInput" class="planner-log-input" placeholder="${tr('\u4f8b\u5982\uff1a\u5b8c\u6210\u4e86 CDSA \u7b2c\u4e00\u7ae0\u590d\u4e60...', 'For example: Finished the first CDSA review chapter...')}"></textarea><button class="ghost-button planner-log-button" id="plannerAddLog">${tr('\u4fdd\u5b58\u8fdb\u5ea6', 'Save progress')}</button></div>
+          <div class="panel planner-input-guide"><div class="eyebrow">${tr('\u5f00\u59cb\u4e00\u4e2a\u5c0f\u66f4\u65b0', 'MAKE A SMALL UPDATE')}</div><h2>${tr('\u8ba9\u8ba1\u5212\u8ddf\u4e0a\u4f60\u7684\u8282\u594f', 'Keep the plan in motion')}</h2><p>${tr('\u6bcf\u6b21\u53ea\u9700\u66f4\u65b0\u4e00\u4e2a\u5177\u4f53\u4efb\u52a1\u6216\u8bb0\u4e0b\u4e00\u6b65\u3002', 'Add one concrete task or capture the next step after each session.')}</p><div class="planner-guide-row"><span>01</span>${tr('\u5148\u5b9a\u4e49\u4e00\u4e2a\u53ef\u6267\u884c\u7684\u4efb\u52a1', 'Define one actionable task')}</div><div class="planner-guide-row"><span>02</span>${tr('\u7528\u8fdb\u5ea6\u65e5\u5fd7\u8bb0\u4e0b\u4f60\u7684\u8fdb\u5c55', 'Log what moved forward')}</div></div>
         </div>
-      </div>`;
+      </div></div>`;
     bind();
   }
 
@@ -100,6 +117,15 @@
   }
 
   function bind() {
+    document.querySelectorAll('[data-planner-tab]').forEach(button => button.addEventListener('click', () => {
+      activeTab = button.dataset.plannerTab === 'input' ? 'input' : 'overview';
+      document.querySelectorAll('[data-planner-tab]').forEach(tab => {
+        const selected = tab.dataset.plannerTab === activeTab;
+        tab.classList.toggle('active', selected);
+        tab.setAttribute('aria-selected', selected);
+      });
+      document.querySelectorAll('[data-planner-panel]').forEach(panel => panel.classList.toggle('active', panel.dataset.plannerPanel === activeTab));
+    }));
     document.querySelector('#plannerRefresh')?.addEventListener('click', load);
     document.querySelector('#plannerAddTask')?.addEventListener('click', async () => {
       const title = document.querySelector('#plannerTaskTitle').value.trim();
