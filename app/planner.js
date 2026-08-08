@@ -5,6 +5,7 @@
 
   let data = { goals: [], projects: [], tasks: [], events: [], progressLogs: [] };
   let activeTab = 'overview';
+  let editingTaskId = null;
   let lastLanguage = document.documentElement.lang;
   const llmState = { configured: false, tested: false, ok: false, testing: false, model: null, latencyMs: null, result: null, error: null };
 
@@ -30,10 +31,13 @@
   function render() {
     activeTab = activeTab === 'input' ? 'input' : 'overview';
     const activeTasks = data.tasks.filter(task => task.status !== 'done' && task.status !== 'cancelled');
+    const displayTasks = data.tasks.filter(task => task.status !== 'cancelled');
+    const editingTask = data.tasks.find(task => task.id === editingTaskId) || null;
     const todayTasks = activeTasks.filter(task => task.dueAt && task.dueAt.slice(0, 10) === todayKey());
     const recentLogs = (data.progressLogs || []).slice(0, 6);
     const githubTaskCount = data.tasks.filter(task => task.source === 'github').length;
     const projects = data.projects || [];
+    const categories = Object.entries(data.tasks.reduce((groups, task) => { const category = task.category || tr('\u672a\u5206\u7c7b', 'Uncategorized'); groups[category] = (groups[category] || 0) + 1; return groups; }, {})).sort((a, b) => b[1] - a[1]);
     view.innerHTML = `
       <div class="page-heading planner-heading">
         <div><div class="eyebrow">PERSONAL OPERATING SYSTEM</div><h1>${tr('\u4e2a\u4eba\u5de5\u4f5c\u8ba1\u5212', 'Personal Planner')}</h1><p>${tr('\u672c\u5730\u4efb\u52a1\u3001\u8fdb\u5ea6\u65e5\u5fd7\u548c\u53ef\u9009\u7684\u81ea\u7136\u8bed\u8a00\u6574\u7406\u5165\u53e3\u3002', 'Local tasks, progress logs, and an optional natural-language planning assistant.')}</p></div>
@@ -50,10 +54,10 @@
         <div class="metric-card"><div class="metric-label">${tr('\u5f85\u5904\u7406', 'Pending')}</div><div class="metric-value">${activeTasks.length}</div><div class="metric-foot">${tr('\u4e0d\u542b\u5df2\u5b8c\u6210\u4e8b\u9879', 'Excludes completed items')}</div></div>
         <div class="metric-card"><div class="metric-label">${tr('\u8fdb\u5ea6\u8bb0\u5f55', 'Progress Logs')}</div><div class="metric-value">${data.progressLogs.length}</div><div class="metric-foot">${tr('\u672c\u5730\u7ef4\u62a4', 'Stored locally')}</div></div>
       </div>
-      <div class="panel planner-projects-panel"><div class="panel-header"><div><div class="panel-title">${tr('\u8ba1\u5212\u9879\u76ee', 'Planner projects')}</div><div class="panel-subtitle">${tr('\u4ece GitHub \u4ed3\u5e93\u81ea\u52a8\u5efa\u7acb\u5e76\u4e0e Issue \u5173\u8054\u3002', 'Repositories synced from GitHub and linked to their Issues.')}</div></div><span class="source-pill"><i></i>${projects.length} ${tr('\u4e2a\u9879\u76ee', 'PROJECTS')}</span></div><div class="planner-project-list">${projects.map(project => { const count = data.tasks.filter(task => task.projectId === project.id).length; const active = data.tasks.filter(task => task.projectId === project.id && !['done', 'cancelled'].includes(task.status)).length; return `<div class="planner-project-row"><div class="planner-project-mark">⌘</div><div class="planner-project-main"><b>${escapeHtml(project.name)}</b><small>${escapeHtml(project.description || tr('\u6765\u81ea GitHub \u7684\u9879\u76ee', 'GitHub-linked project'))}</small></div><span>${active}/${count} ${tr('\u9879\u6d3b\u8dc3', 'active')}</span></div>`; }).join('') || `<div class="empty">${tr('\u6682\u65e0\u81ea\u52a8\u8054\u52a8\u7684 GitHub \u9879\u76ee', 'No GitHub-linked projects yet')}</div>`}</div></div>
+      <div class="panel planner-projects-panel"><div class="panel-header"><div><div class="panel-title">${tr('\u8ba1\u5212\u9879\u76ee', 'Planner projects')}</div><div class="panel-subtitle">${tr('\u4ece GitHub \u4ed3\u5e93\u81ea\u52a8\u5efa\u7acb\u5e76\u4e0e Issue \u5173\u8054\u3002', 'Repositories synced from GitHub and linked to their Issues.')}</div></div><span class="source-pill"><i></i>${projects.length} ${tr('\u4e2a\u9879\u76ee', 'PROJECTS')}</span></div><div class="planner-project-list">${projects.map(project => { const count = data.tasks.filter(task => task.projectId === project.id).length; const active = data.tasks.filter(task => task.projectId === project.id && !['done', 'cancelled'].includes(task.status)).length; return `<div class="planner-project-row"><div class="planner-project-mark">⌘</div><div class="planner-project-main"><b>${escapeHtml(project.name)}</b><small>${escapeHtml(project.description || tr('\u6765\u81ea GitHub \u7684\u9879\u76ee', 'GitHub-linked project'))}</small></div><span>${active}/${count} ${tr('\u9879\u6d3b\u8dc3', 'active')}</span></div>`; }).join('') || `<div class="empty">${tr('\u6682\u65e0\u81ea\u52a8\u8054\u52a8\u7684 GitHub \u9879\u76ee', 'No GitHub-linked projects yet')}</div>`}</div><div class="planner-category-list"><span class="planner-category-label">${tr('\u5206\u7c7b', 'Categories')}</span>${categories.map(([category, count]) => `<span class="planner-category-chip">${escapeHtml(category)} <b>${count}</b></span>`).join('') || `<span class="empty">${tr('\u6682\u65e0', 'None')}</span>`}</div></div>
       <div class="planner-grid planner-output-grid">
         <div class="planner-output-main">
-          <div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('\u5f53\u524d\u4efb\u52a1', 'Current tasks')}</div><div class="panel-subtitle">${tr('\u4f18\u5148\u5904\u7406\u8fd9\u4e9b\u53ef\u6267\u884c\u4e8b\u9879\u3002', 'The next actionable items in your plan.')}</div></div><span class="source-pill"><i></i>${activeTasks.length} ${tr('\u9879\u5f85\u529e', 'TO DO')}</span></div><div id="plannerTasks">${renderTasks(activeTasks)}</div></div>
+          <div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('\u8ba1\u5212\u4efb\u52a1', 'Planner tasks')}</div><div class="panel-subtitle">${tr('\u53ef\u5728\u8fd9\u91cc\u5b8c\u6210\u3001\u7f16\u8f91\u6216\u5220\u9664\u4efb\u52a1\u3002', 'Complete, edit, or delete tasks here.')}</div></div><span class="source-pill"><i></i>${activeTasks.length} ${tr('\u9879\u5f85\u529e', 'TO DO')}</span></div><div id="plannerTasks">${renderTasks(displayTasks)}</div></div>
           <div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('\u8fdb\u5ea6\u65e5\u5fd7', 'Progress log')}</div><div class="panel-subtitle">${tr('\u4fdd\u7559\u201c\u6211\u662f\u600e\u4e48\u8d70\u5230\u73b0\u5728\u7684\u201d\u3002', 'Keep a record of how you got here.')}</div></div></div><div class="planner-log-list">${recentLogs.map(log => `<div class="planner-log"><span>${dateText(log.occurredAt)}</span><b>${escapeHtml(log.content)}</b></div>`).join('') || `<div class="empty">${tr('\u6682\u65e0\u8fdb\u5ea6\u8bb0\u5f55', 'No progress logs')}</div>`}</div></div>
         </div>
         <div>
@@ -70,7 +74,7 @@
             <div class="planner-actions"><button class="primary-button" id="plannerInterpret" ${llmState.configured ? '' : 'disabled'}>${tr('\u89e3\u6790\u5e76\u9884\u89c8', 'Parse and preview')}</button><button class="ghost-button" id="plannerLlmTest" ${llmState.configured ? '' : 'disabled'}>${tr('\u6d4b\u8bd5\u672c\u5730 LLM', 'Test Local LLM')}</button><button class="ghost-button" id="plannerRefresh">${tr('\u5237\u65b0', 'Refresh')}</button></div>
             <div id="plannerLlmTestResult">${llmTestResultHtml()}</div><div id="plannerPreview"></div>
           </div>
-          <div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('\u5feb\u901f\u6dfb\u52a0\u4efb\u52a1', 'Quick add task')}</div><div class="panel-subtitle">${tr('\u5148\u5efa\u7acb\u53ef\u6267\u884c\u7684\u672c\u5730\u8ba1\u5212\u3002', 'Start with an actionable local plan.')}</div></div></div><div class="planner-form"><input id="plannerTaskTitle" placeholder="${tr('\u4efb\u52a1\u540d\u79f0', 'Task title')}" /><input id="plannerTaskDue" type="datetime-local" /><select id="plannerTaskPriority"><option value="medium">${tr('\u666e\u901a\u4f18\u5148\u7ea7', 'Medium priority')}</option><option value="high">${tr('\u9ad8\u4f18\u5148\u7ea7', 'High priority')}</option><option value="low">${tr('\u4f4e\u4f18\u5148\u7ea7', 'Low priority')}</option></select><button class="primary-button" id="plannerAddTask">${tr('\u6dfb\u52a0\u4efb\u52a1', 'Add task')}</button></div></div>
+          <div class="panel"><div class="panel-header"><div><div class="panel-title">${editingTask ? tr('\u7f16\u8f91\u4efb\u52a1', 'Edit task') : tr('\u5feb\u901f\u6dfb\u52a0\u4efb\u52a1', 'Quick add task')}</div><div class="panel-subtitle">${editingTask ? tr('\u4fee\u6539\u540e\u4fdd\u5b58\u4efb\u52a1\u3002', 'Update the task and save your changes.') : tr('\u5148\u5efa\u7acb\u53ef\u6267\u884c\u7684\u672c\u5730\u8ba1\u5212\u3002', 'Start with an actionable local plan.')}</div></div></div><div class="planner-form"><input id="plannerTaskTitle" value="${editingTask ? escapeHtml(editingTask.title) : ''}" placeholder="${tr('\u4efb\u52a1\u540d\u79f0', 'Task title')}" /><input id="plannerTaskDue" type="datetime-local" value="${editingTask?.dueAt ? editingTask.dueAt.slice(0, 16) : ''}" /><select id="plannerTaskPriority"><option value="medium" ${editingTask?.priority === 'medium' || !editingTask ? 'selected' : ''}>${tr('\u666e\u901a\u4f18\u5148\u7ea7', 'Medium priority')}</option><option value="high" ${editingTask?.priority === 'high' ? 'selected' : ''}>${tr('\u9ad8\u4f18\u5148\u7ea7', 'High priority')}</option><option value="low" ${editingTask?.priority === 'low' ? 'selected' : ''}>${tr('\u4f4e\u4f18\u5148\u7ea7', 'Low priority')}</option></select><select id="plannerTaskStatus"><option value="planned" ${editingTask?.status === 'planned' || !editingTask ? 'selected' : ''}>${tr('\u8ba1\u5212\u4e2d', 'Planned')}</option><option value="in-progress" ${editingTask?.status === 'in-progress' ? 'selected' : ''}>${tr('\u8fdb\u884c\u4e2d', 'In Progress')}</option><option value="done" ${editingTask?.status === 'done' ? 'selected' : ''}>${tr('\u5df2\u5b8c\u6210', 'Done')}</option></select><button class="primary-button" id="plannerSaveTask">${editingTask ? tr('\u4fdd\u5b58\u4fee\u6539', 'Save changes') : tr('\u6dfb\u52a0\u4efb\u52a1', 'Add task')}</button>${editingTask ? `<button class="ghost-button" id="plannerCancelEdit">${tr('\u53d6\u6d88', 'Cancel')}</button>` : ''}</div></div>
         </div>
         <div>
           <div class="panel"><div class="panel-header"><div><div class="panel-title">${tr('\u8bb0\u5f55\u8fdb\u5ea6', 'Log progress')}</div><div class="panel-subtitle">${tr('\u8bb0\u4e0b\u4f60\u4eca\u5929\u5b8c\u6210\u4e86\u4ec0\u4e48\u3002', 'Capture what moved forward today.')}</div></div></div><textarea id="plannerLogInput" class="planner-log-input" placeholder="${tr('\u4f8b\u5982\uff1a\u5b8c\u6210\u4e86 CDSA \u7b2c\u4e00\u7ae0\u590d\u4e60...', 'For example: Finished the first CDSA review chapter...')}"></textarea><button class="ghost-button planner-log-button" id="plannerAddLog">${tr('\u4fdd\u5b58\u8fdb\u5ea6', 'Save progress')}</button></div>
@@ -82,7 +86,7 @@
 
   function renderTasks(tasks) {
     if (!tasks.length) return `<div class="empty">${tr('\u6682\u65e0\u5f85\u5904\u7406\u4efb\u52a1', 'No pending tasks')}</div>`;
-    return tasks.map(task => `<div class="planner-task"><div class="planner-task-main"><b>${escapeHtml(task.title)}</b><small>${task.dueAt ? `${tr('\u622a\u6b62', 'Due')} ${dateText(task.dueAt)}` : tr('\u672a\u8bbe\u7f6e\u622a\u6b62\u65f6\u95f4', 'No due date')} Â· ${statusText(task.status)}</small></div><span class="planner-priority ${task.priority}">${priorityText(task.priority)}</span><button class="text-button planner-complete" data-id="${task.id}">${tr('\u5b8c\u6210', 'Complete')}</button></div>`).join('');
+    return tasks.map(task => { const tags = Array.isArray(task.tags) ? task.tags.slice(0, 4) : []; return `<div class="planner-task"><div class="planner-task-main"><b>${escapeHtml(task.title)}</b><small>${task.category ? `${escapeHtml(task.category)} · ` : ''}${task.dueAt ? `${tr('\u622a\u6b62', 'Due')} ${dateText(task.dueAt)}` : tr('\u672a\u8bbe\u7f6e\u622a\u6b62\u65f6\u95f4', 'No due date')} Â· ${statusText(task.status)}</small>${tags.length ? `<div class="planner-task-tags">${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div>` : ''}</div><span class="planner-priority ${task.priority}">${priorityText(task.priority)}</span><button class="text-button planner-complete" data-id="${task.id}" data-status="${task.status}">${task.status === 'done' ? tr('\u91cd\u65b0\u6253\u5f00', 'Reopen') : tr('\u5b8c\u6210', 'Complete')}</button><button class="text-button planner-edit" data-id="${task.id}">${tr('\u7f16\u8f91', 'Edit')}</button><button class="text-button planner-delete" data-id="${task.id}">${tr('\u5220\u9664', 'Delete')}</button></div>`; }).join('');
   }
 
   function renderEvents() {
@@ -130,18 +134,25 @@
       document.querySelectorAll('[data-planner-panel]').forEach(panel => panel.classList.toggle('active', panel.dataset.plannerPanel === activeTab));
     }));
     document.querySelector('#plannerRefresh')?.addEventListener('click', load);
-    document.querySelector('#plannerAddTask')?.addEventListener('click', async () => {
+    document.querySelector('#plannerSaveTask')?.addEventListener('click', async () => {
       const title = document.querySelector('#plannerTaskTitle').value.trim();
       if (!title) return;
-      try { await apply([{ type: 'create_task', title, dueAt: document.querySelector('#plannerTaskDue').value || null, priority: document.querySelector('#plannerTaskPriority').value }]); } catch (error) { showError(error.message); }
+      const operation = editingTaskId ? { type: 'update_task', id: editingTaskId, title, dueAt: document.querySelector('#plannerTaskDue').value || null, priority: document.querySelector('#plannerTaskPriority').value, status: document.querySelector('#plannerTaskStatus').value } : { type: 'create_task', title, dueAt: document.querySelector('#plannerTaskDue').value || null, priority: document.querySelector('#plannerTaskPriority').value, status: document.querySelector('#plannerTaskStatus').value };
+      try { await apply([operation]); editingTaskId = null; render(); } catch (error) { showError(error.message); }
     });
+    document.querySelector('#plannerCancelEdit')?.addEventListener('click', () => { editingTaskId = null; render(); });
     document.querySelector('#plannerAddLog')?.addEventListener('click', async () => {
       const input = document.querySelector('#plannerLogInput');
       if (!input.value.trim()) return;
       try { await apply([{ type: 'log_progress', content: input.value.trim() }]); } catch (error) { showError(error.message); }
     });
     document.querySelectorAll('.planner-complete').forEach(button => button.addEventListener('click', async () => {
-      try { await apply([{ type: 'update_task', id: button.dataset.id, status: 'done' }]); } catch (error) { showError(error.message); }
+      try { await apply([{ type: 'update_task', id: button.dataset.id, status: button.dataset.status === 'done' ? 'planned' : 'done' }]); } catch (error) { showError(error.message); }
+    }));
+    document.querySelectorAll('.planner-edit').forEach(button => button.addEventListener('click', () => { editingTaskId = button.dataset.id; activeTab = 'input'; render(); }));
+    document.querySelectorAll('.planner-delete').forEach(button => button.addEventListener('click', async () => {
+      if (!window.confirm(tr('\u786e\u5b9a\u5220\u9664\u8fd9\u4e2a\u4efb\u52a1\u5417\uff1f\u6b64\u64cd\u4f5c\u4e0d\u53ef\u64a4\u9500\u3002', 'Delete this task? This cannot be undone.'))) return;
+      try { await apply([{ type: 'delete_task', id: button.dataset.id }]); } catch (error) { showError(error.message); }
     }));
     document.querySelector('#plannerInterpret')?.addEventListener('click', interpret);
     document.querySelector('#plannerLlmTest')?.addEventListener('click', testLlm);

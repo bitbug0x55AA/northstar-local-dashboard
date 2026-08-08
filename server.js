@@ -192,6 +192,7 @@ async function fetchRepo(config) {
     title: item.title,
     state: item.state,
     labels: item.labels.map(label => label.name),
+    body: item.body ? String(item.body).slice(0, 2000) : null,
     url: item.html_url,
     updatedAt: item.updated_at,
     closedAt: item.closed_at,
@@ -598,20 +599,20 @@ const server = http.createServer(async (req, res) => {
         for (const issue of Array.isArray(repo.issues) ? repo.issues : []) {
           const sourceRef = `github:${String(repo.name || '').trim()}#${issue.number}`;
           const existing = known.get(sourceRef);
-          const needsPolish = !existing?.sourcePolishVersion || (llmAvailable && existing.sourcePolishVersion !== 'github-polish-v1');
+          const needsPolish = !existing?.sourcePolishVersion || (llmAvailable && existing.sourcePolishVersion !== 'github-polish-v2');
           if (!existing || existing.sourceUpdatedAt !== issue.updatedAt || needsPolish) candidates.push({ ...issue, repo: repo.name });
         }
       }
       const polished = await polishGithubIssues(candidates, body.language);
       const polishedByRef = new Map(polished.items.map(item => [item.sourceRef, item]));
-      const polishVersion = polished.fallback ? 'github-raw-v1' : 'github-polish-v1';
+      const polishVersion = polished.fallback ? 'github-raw-v2' : 'github-polish-v2';
       const enriched = {
         ...github,
         repos: (github.repos || []).map(repo => ({
           ...repo,
           issues: (repo.issues || []).map(issue => {
             const item = polishedByRef.get(`github:${String(repo.name || '').trim()}#${issue.number}`);
-            return item ? { ...issue, plannerTitle: item.title, plannerNotes: item.notes, plannerPolishVersion: polishVersion } : issue;
+            return item ? { ...issue, plannerTitle: item.title, plannerNotes: item.notes, plannerCategory: item.category, plannerTags: item.tags, plannerPolishVersion: polishVersion } : issue;
           })
         }))
       };

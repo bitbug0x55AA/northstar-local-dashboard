@@ -92,7 +92,9 @@ function rawGithubPolish(issue) {
   return {
     sourceRef: githubIssueRef(issue.repo, issue.number),
     title: `#${issue.number} ${String(issue.title || '').trim()}`.slice(0, 1000),
-    notes: [`GitHub: ${issue.repo}`, issue.url ? `URL: ${issue.url}` : '', labels ? `Labels: ${labels}` : ''].filter(Boolean).join('\n').slice(0, 1000)
+    notes: [`GitHub: ${issue.repo}`, issue.url ? `URL: ${issue.url}` : '', labels ? `Labels: ${labels}` : ''].filter(Boolean).join('\n').slice(0, 1000),
+    category: labels || 'general',
+    tags: (issue.labels || []).slice(0, 6)
   };
 }
 
@@ -105,10 +107,12 @@ async function polishGithubIssues(issues, language = 'zh') {
 
   const system = [
     'You polish GitHub issues into concise personal-planner entries.',
-    'Return JSON only in this shape: {"items":[{"sourceRef":"...","title":"...","notes":"..."}]}',
+    'Return JSON only in this shape: {"items":[{"sourceRef":"...","title":"...","notes":"...","category":"...","tags":["..."]}]}',
     'Keep exactly one output item for each input sourceRef. Never invent facts, dates, priorities, status, IDs, or repository names.',
     'The title should be a clear, action-oriented task title, preserving the issue number prefix.',
-    'The notes should briefly explain the work and retain the original GitHub URL and labels when present.',
+    'The notes should be a concise 1-3 sentence execution-oriented summary, followed by the original GitHub URL and labels when present.',
+    'Use category for a short grouping such as architecture, bugfix, feature, security, testing, documentation, maintenance, or research.',
+    'Extract 2-5 useful tags for technology, domain, stage, or risk. Do not invent tags unsupported by the issue.',
     `Write the polished text in ${language === 'en' ? 'English' : 'Simplified Chinese'}, while keeping code names and issue numbers unchanged.`
   ].join('\n');
   const input = candidates.map(issue => ({
@@ -117,7 +121,8 @@ async function polishGithubIssues(issues, language = 'zh') {
     number: issue.number,
     title: String(issue.title).slice(0, 300),
     labels: (issue.labels || []).slice(0, 8),
-    url: issue.url || null
+    url: issue.url || null,
+    body: issue.body ? String(issue.body).slice(0, 1200) : null
   }));
   try {
     const isOllamaApi = /\/api\/chat(?:\?|$)/i.test(endpoint);
@@ -136,10 +141,12 @@ async function polishGithubIssues(issues, language = 'zh') {
       return {
         sourceRef: item.sourceRef,
         title: polished.title.trim().slice(0, 1000),
-        notes: typeof polished.notes === 'string' && polished.notes.trim() ? polished.notes.trim().slice(0, 1000) : item.notes
+        notes: typeof polished.notes === 'string' && polished.notes.trim() ? polished.notes.trim().slice(0, 1000) : item.notes,
+        category: typeof polished.category === 'string' && polished.category.trim() ? polished.category.trim().slice(0, 80) : item.category,
+        tags: Array.isArray(polished.tags) ? polished.tags.filter(tag => typeof tag === 'string' && tag.trim()).map(tag => tag.trim().slice(0, 40)).slice(0, 6) : item.tags
       };
     });
-    return { items, used: items.filter((item, index) => item.title !== fallback[index].title || item.notes !== fallback[index].notes).length, fallback: false };
+    return { items, used: items.filter((item, index) => item.title !== fallback[index].title || item.notes !== fallback[index].notes || item.category !== fallback[index].category || JSON.stringify(item.tags) !== JSON.stringify(fallback[index].tags)).length, fallback: false };
   } catch {
     return { items: fallback, used: 0, fallback: true };
   }

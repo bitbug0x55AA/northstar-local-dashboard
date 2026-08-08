@@ -22,7 +22,7 @@ Then open `http://127.0.0.1:4173`.
 ## Current Features
 
 - GitHub: repository overview, issues, recent releases, latest GitHub Actions CI status, failed-job inspection, and an issue-label planning board.
-- GitHub → Planner bridge: Open Issues are automatically mirrored into Personal Planner after each GitHub sync. A configured local LLM can polish issue titles and notes before they enter the Planner; without a model, the sync safely falls back to the original GitHub text.
+- GitHub → Planner bridge: Open Issues are automatically mirrored into Personal Planner after each GitHub sync. A configured local LLM turns raw issues into concise task summaries, categories, tags, and project-linked parent/child entries; without a model, the sync safely falls back to the original GitHub text.
 - AI usage: local Codex / Claude Code usage, today and month totals, sessions, 14-day trend, model distribution, and visible subscription-limit snapshots.
 - Personal Planner: a display-first overview of tasks, progress logs, focus, and upcoming events, plus a separate input tab for manual and natural-language updates.
 - Settings: display name, UI language, GitHub owner, repository list, and optional read-only GitHub token.
@@ -82,7 +82,7 @@ For the local Ollama setup, use the simpler feature-specific launcher. It enable
 
 Planner data is stored separately under `%APPDATA%\Northstar\planner` by default. Set `NORTHSTAR_PLANNER_DIR` to use another local directory. The Planner API uses `/api/planner/*` and does not modify GitHub or AI usage data.
 
-When GitHub sync succeeds, Northstar also calls `/api/planner/github-sync`. Open Issues become Planner tasks; `in-progress`, `in progress`, and `doing` labels map to an in-progress task, `urgent`, `critical`, and `blocker` labels map to high priority, and a matching closed Issue completes its Planner task. Existing manual tasks are not touched. The same bridge runs through the five-minute automatic sync.
+When GitHub sync succeeds, Northstar also calls `/api/planner/github-sync`. Open Issues become Planner tasks under a repository-level parent project; the local LLM adds a short category and tags, while `in-progress`, `in progress`, and `doing` labels map to an in-progress task, `urgent`, `critical`, and `blocker` labels map to high priority, and a matching closed Issue completes its Planner task. Existing manual tasks are not touched. The same bridge runs through the five-minute automatic sync.
 
 Natural-language interpretation is optional. Configure an OpenAI-compatible local model endpoint and model name before starting:
 

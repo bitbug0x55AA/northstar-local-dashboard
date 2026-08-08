@@ -96,6 +96,9 @@ function createTask(data, operation) {
     sourceRef: asText(operation.sourceRef) || null,
     sourceUpdatedAt: asText(operation.sourceUpdatedAt) || null,
     sourcePolishVersion: asText(operation.sourcePolishVersion) || null,
+    category: asText(operation.category) || null,
+    tags: Array.isArray(operation.tags) ? operation.tags.map(tag => asText(tag)).filter(Boolean).slice(0, 8) : [],
+    parentId: asText(operation.parentId) || null,
     createdAt: now,
     updatedAt: now
   };
@@ -143,7 +146,7 @@ function applyOperation(data, operation) {
   }
   if (type === 'update_task') {
     const task = findById(data.tasks, required(operation.id, 'Task id'), 'Task');
-    const allowed = ['title', 'notes', 'status', 'priority', 'projectId', 'dueAt', 'sourceRef'];
+    const allowed = ['title', 'notes', 'status', 'priority', 'projectId', 'dueAt', 'sourceRef', 'category', 'tags', 'parentId'];
     for (const key of allowed) {
       if (!(key in operation)) continue;
       if (key === 'title') task.title = required(operation[key], 'Task title');
@@ -151,9 +154,19 @@ function applyOperation(data, operation) {
       else if (key === 'priority' && !['low', 'medium', 'high'].includes(operation[key])) throw new Error('Task priority is invalid');
       else if (key === 'dueAt') task.dueAt = isoDate(operation[key], 'Task dueAt');
       else if (key === 'sourceRef') task.sourceRef = asText(operation[key]) || null;
+      else if (key === 'category') task.category = asText(operation[key]) || null;
+      else if (key === 'tags') task.tags = Array.isArray(operation[key]) ? operation[key].map(tag => asText(tag)).filter(Boolean).slice(0, 8) : [];
+      else if (key === 'parentId') task.parentId = asText(operation[key]) || null;
       else task[key] = asText(operation[key]) || null;
     }
     task.updatedAt = new Date().toISOString();
+    return { type, item: task };
+  }
+  if (type === 'delete_task') {
+    const id = required(operation.id, 'Task id');
+    const index = data.tasks.findIndex(entry => entry.id === id);
+    if (index < 0) throw new Error('Task was not found');
+    const [task] = data.tasks.splice(index, 1);
     return { type, item: task };
   }
   throw new Error(`Unsupported planner operation: ${type || 'unknown'}`);
@@ -231,7 +244,10 @@ function syncGithubToPlanner(githubData) {
         source: 'github',
         sourceRef,
         sourceUpdatedAt: asText(issue.updatedAt) || null,
-        sourcePolishVersion: hasPolishPayload ? (asText(issue.plannerPolishVersion) || 'github-raw-v1') : (existing?.sourcePolishVersion || 'github-raw-v1')
+        sourcePolishVersion: hasPolishPayload ? (asText(issue.plannerPolishVersion) || 'github-raw-v2') : (existing?.sourcePolishVersion || 'github-raw-v2'),
+        category: hasPolishPayload ? (asText(issue.plannerCategory) || 'general') : (existing?.category || 'general'),
+        tags: hasPolishPayload ? (Array.isArray(issue.plannerTags) ? issue.plannerTags : []) : (existing?.tags || []),
+        parentId: project.id
       };
       if (existing) {
         if (existing.sourceUpdatedAt && existing.sourceUpdatedAt === fields.sourceUpdatedAt && existing.sourcePolishVersion === fields.sourcePolishVersion && existing.projectId === project.id) continue;
