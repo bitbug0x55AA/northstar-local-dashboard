@@ -50,6 +50,7 @@ test.before(async () => {
   fs.mkdirSync(claudeUsagePath, { recursive: true });
   fs.writeFileSync(path.join(codexUsagePath, 'session.jsonl'), `${JSON.stringify({ timestamp: now, type: 'event_msg', title: 'Review auth middleware', payload: { session_id: 'codex-session', model: 'gpt-5-codex', info: { context_window: 128000, last_token_usage: { total_tokens: 180000, input_tokens: 180000, context_tokens: 12000 } } } })}\n`);
   fs.writeFileSync(path.join(claudeUsagePath, 'session.jsonl'), `${JSON.stringify({ timestamp: now, type: 'assistant', sessionId: 'claude-session', message: { model: 'claude-test', usage: { input_tokens: 20, output_tokens: 30, cache_read_input_tokens: 400, cache_creation_input_tokens: 50 } } })}\n`);
+  fs.writeFileSync(path.join(claudeUsagePath, 'agent-test.meta.json'), JSON.stringify({ sessionId: 'metadata-only' }));
   server = spawn(process.execPath, ['server.js'], {
     cwd: root,
     env: {

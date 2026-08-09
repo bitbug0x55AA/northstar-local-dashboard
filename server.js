@@ -331,7 +331,7 @@ function listJsonFiles(targetPath, limit = 600) {
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) stack.push(fullPath);
-      if (entry.isFile() && /\.(jsonl?|ndjson)$/i.test(entry.name)) files.push(fullPath);
+      if (entry.isFile() && /\.(jsonl|ndjson)$/i.test(entry.name)) files.push(fullPath);
       if (files.length >= limit) break;
     }
   }
@@ -509,6 +509,8 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
   for (const file of files) {
     let currentModel = null;
     let currentSession = file;
+    let fileDate = new Date(0);
+    try { fileDate = fs.statSync(file).mtime; } catch {}
     for (const record of readJsonRecords(file)) {
       const recordModel = record.model || record.modelName || record.message?.model || record.payload?.model || record.payload?.thread_settings?.model || record.payload?.collaboration_mode?.settings?.model;
       const session = record.session_id || record.sessionId || record.conversation_id || record.conversationId || record.payload?.session_id || file;
@@ -527,7 +529,7 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
       }
       const usage = tokenUsageFrom(record);
       const total = usage.total;
-      const observedAt = recordDate(record) || new Date();
+      const observedAt = recordDate(record) || fileDate;
       const contextWindow = numberFrom(record, CONTEXT_WINDOW_FIELDS);
       const contextTokens = sessionContextTokens(record, usage);
       const sessionDetail = sessionDetails.get(currentSession) || { id: currentSession, provider: sourceName, model: null, title: null, contextWindow: 0, contextTokens: 0, updatedAt: null, tokens: 0, latestContextTokens: 0, lastActiveAt: observedAt.toISOString() };
@@ -540,8 +542,6 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
       sessionDetails.set(currentSession, sessionDetail);
       if (!total) continue;
 
-      let fileDate = new Date();
-      try { fileDate = fs.statSync(file).mtime; } catch {}
       const date = recordDate(record) || fileDate;
       const dayKey = dateKey(date);
       byDay.set(dayKey, (byDay.get(dayKey) || 0) + total);
