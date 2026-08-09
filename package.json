@@ -8,5 +8,8 @@
     "lint": "node tests/check-source.js",
     "test": "node tests/run-tests.js",
     "ci": "npm run lint && npm test"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0"
   }
 }

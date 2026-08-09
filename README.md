@@ -4,7 +4,7 @@ Northstar is a local Windows 11 developer control room for tracking GitHub deliv
 
 ## Start
 
-Requires Node.js 16 or newer. In PowerShell:
+Requires Node.js 20 or newer. In PowerShell:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
@@ -27,7 +27,14 @@ GitHub Actions runs the full verification suite on every push and pull request, 
 npm run ci
 ```
 
-The suite has no third-party test dependency and covers JavaScript syntax, referenced static assets, Planner policy and GitHub sync regressions, Observability data redaction and persistence, read-only Merge Orchestrator analysis, HTTP API behavior including local-origin and static-file access boundaries, core language-switch labels, a dead-button contract for every rendered button, and the GitHub sidebar parent/child expand-collapse contract. A separate CodeQL workflow analyzes JavaScript on pushes, pull requests, manual runs, and weekly scheduled scans.
+The suite covers JavaScript syntax, referenced static assets, Planner policy and GitHub sync regressions, Observability data redaction and persistence, read-only Merge Orchestrator analysis, HTTP API behavior including local-origin and static-file access boundaries, core language-switch labels, UI interaction contracts, and jsdom behavior tests. A separate CodeQL workflow analyzes JavaScript on pushes, pull requests, manual runs, and weekly scheduled scans.
+
+UI tests use two levels:
+
+- Static contract tests infer selectors from actual `addEventListener` registrations and check every rendered button against them. Do not add per-button class or attribute whitelists.
+- jsdom behavior tests render a module, dispatch real DOM events, and assert state, DOM, and operation payloads. Any new interaction with multi-step state—mode switches, edit/cancel/save loops, previews, or confirmation-gated writes—must include this level before merging. Read-only display modules can remain at the static-contract level.
+
+Browser-level visual or end-to-end regression remains optional until manual cross-page testing becomes costly.
 
 ## Current Features
 

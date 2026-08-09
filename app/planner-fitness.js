@@ -72,7 +72,7 @@
       const shared = { performedAt: value('#fitnessPerformedAt'), durationMinutes: value('#fitnessDuration'), notes: value('#fitnessNotes') };
       const exercises = [...document.querySelectorAll('.fitness-exercise-row')].map(row => { const exerciseName = row.querySelector('.fitness-exercise-name').value; return { exerciseName, loadKg: row.querySelector('.fitness-exercise-load').value, reps: row.querySelector('.fitness-exercise-reps').value, sets: row.querySelector('.fitness-exercise-sets').value, setsArePerSide: row.querySelector('.fitness-exercise-per-side').checked || /单腿|单侧|single[- ]?leg|unilateral/i.test(exerciseName) }; });
       const operation = mode === 'strength' ? { type: button.currentTarget.dataset.recordId ? 'update_fitness_session' : 'log_fitness_session', ...(button.currentTarget.dataset.recordId ? { id: button.currentTarget.dataset.recordId } : {}), plan: 'strength', session: button.currentTarget.dataset.session, ...shared, exercises, rpe: value('#fitnessRpe'), quality: value('#fitnessQuality'), soreness24: value('#fitnessSoreness24'), soreness48: value('#fitnessSoreness48') } : { type: 'log_hike', ...shared, distanceKm: value('#fitnessDistance'), elevationM: value('#fitnessElevation'), effort: value('#fitnessEffort') };
-      try { await apply([operation]); resetForm(state); } catch (error) { showError(error.message); }
+      try { await apply([operation]); resetForm(state); state.render(); } catch (error) { showError(error.message); }
     });
   }
   window.NorthstarPlannerFitness = { render, bind };

@@ -43,21 +43,70 @@ test('observability UI has a bilingual rendering contract', () => {
   assert.doesNotMatch(observability, /<h1>Logs & Audit<|>↻ Refresh<|>Total Events</u, 'observability UI text must not bypass the translator');
 });
 
-test('every rendered button has an explicit interaction contract', () => {
-  const buttonTags = sources.flatMap(source => source.content.match(/<button\b[^>]*>/g) || []);
-  assert.ok(buttonTags.length >= 30, 'expected the full dashboard button surface to be scanned');
-  const handledDataAttributes = ['data-view', 'data-github-subview', 'data-github-view', 'data-go', 'data-planner-tab', 'data-planner-sidepage', 'data-performance-view', 'data-performance-action', 'data-delete-category', 'data-delete-plan', 'data-delete-target', 'data-obs-tab', 'data-fitness-log', 'data-mode'];
-  const handledClasses = ['ci-check', 'planner-complete', 'planner-edit', 'planner-delete', 'planner-remove-category', 'obs-action', 'fitness-close', 'fitness-profile-save', 'fitness-weight-log', 'fitness-review-button', 'fitness-edit', 'fitness-delete', 'fitness-exercise-add', 'fitness-exercise-remove', 'security-edit-milestone', 'weekly-edit-event'];
+function listenedSelectors(content) {
+  const selectors = new Set();
+  const addMatches = pattern => {
+    for (const match of content.matchAll(pattern)) selectors.add(match.groups.selector);
+  };
 
-  for (const button of buttonTags) {
-    const id = button.match(/\bid=["']([^"']+)["']/)?.[1];
-    const hasHandledDataAttribute = handledDataAttributes.some(attribute => button.includes(attribute));
-    const hasFormSubmitContract = button.includes('type="submit"');
-    const hasHandledClass = handledClasses.some(className => new RegExp(`\\b${className}\\b`).test(button));
-    const hasRegisteredIdHandler = id && (
-      combined.includes(`#${id}`) || combined.includes(`id==='${id}'`) || combined.includes(`id === '${id}'`)
-    );
-    assert.ok(hasHandledDataAttribute || hasFormSubmitContract || hasHandledClass || hasRegisteredIdHandler, `dead button contract: ${button}`);
+  // Direct listeners and querySelectorAll(...).forEach(button => button.addEventListener(...)).
+  addMatches(/(?:querySelector(?:All)?|\$)\(\s*(['"`])(?<selector>[^'"`]+)\1\s*\)[^;\n]{0,240}?addEventListener\(/g);
+  for (const match of content.matchAll(/querySelectorAll\(\s*(['"`])(?<selector>[^'"`]+)\1\s*\)\.forEach\(\s*(?<variable>[A-Za-z_$][\w$]*)\s*=>\s*\{?(?<body>[\s\S]{0,800}?)\}\);/g)) {
+    if (new RegExp(`\\b${match.groups.variable}\\??\\.addEventListener\\(`).test(match.groups.body)) selectors.add(match.groups.selector);
+  }
+  // Delegated listeners such as event.target.closest('[data-action]').
+  addMatches(/event\.target\.closest\(\s*(['"`])(?<selector>[^'"`]+)\1\s*\)/g);
+
+  // Selectors assigned to a local before the listener is registered.
+  for (const match of content.matchAll(/(?:const|let)\s+(?<variable>[A-Za-z_$][\w$]*)\s*=\s*(?:document\.)?(?:querySelector|\$)\(\s*(['"`])(?<selector>[^'"`]+)\2\s*\)/g)) {
+    const listener = new RegExp(`\\b${match.groups.variable}\\??\\.addEventListener\\(`);
+    if (listener.test(content.slice(match.index))) selectors.add(match.groups.selector);
+  }
+
+  // A document-level click listener may intentionally dispatch by element id.
+  if (/document\.addEventListener\(\s*['"]click['"]/.test(content)) {
+    for (const match of content.matchAll(/\.id\s*===?\s*(['"])(?<id>[^'"]+)\1/g)) selectors.add(`#${match.groups.id}`);
+  }
+  return selectors;
+}
+
+function selectorCoversElement(selector, tag) {
+  const id = tag.match(/\bid=["']([^"']+)["']/)?.[1];
+  const classes = new Set((tag.match(/\bclass=["']([^"']+)["']/)?.[1] || '').split(/\s+/).filter(Boolean));
+  const attributes = new Map([...tag.matchAll(/\b(data-[\w-]+)(?:=["']([^"']*)["'])?/g)].map(match => [match[1], match[2]]));
+
+  return selector.split(',').some(part => {
+    const target = part.trim().split(/\s+|>/).filter(Boolean).at(-1) || '';
+    const selectorId = target.match(/#([\w-]+)/)?.[1];
+    if (selectorId && selectorId !== id) return false;
+    const selectorClasses = [...target.matchAll(/\.([\w-]+)/g)].map(match => match[1]);
+    if (selectorClasses.some(className => !classes.has(className))) return false;
+    const selectorAttributes = [...target.matchAll(/\[(data-[\w-]+)(?:=["']([^"']*)["'])?\]/g)];
+    if (selectorAttributes.some(match => !attributes.has(match[1]) || (match[2] !== undefined && attributes.get(match[1]) !== match[2]))) return false;
+    const elementName = tag.match(/^<([\w-]+)/)?.[1];
+    return target === elementName || Boolean(selectorId || selectorClasses.length || selectorAttributes.length);
+  });
+}
+
+function enclosingForm(content, buttonIndex) {
+  const prefix = content.slice(0, buttonIndex);
+  const formStart = prefix.lastIndexOf('<form');
+  if (formStart < 0 || formStart < prefix.lastIndexOf('</form>')) return null;
+  return content.slice(formStart, content.indexOf('>', formStart) + 1);
+}
+
+test('every rendered button is covered by a selector with a real event listener', () => {
+  const buttonTags = sources.flatMap(source => [...source.content.matchAll(/<button\b[^>]*>/g)].map(match => ({ source: source.name, content: source.content, index: match.index, button: match[0] })));
+  const selectors = new Set(sources.flatMap(source => [...listenedSelectors(source.content)]));
+  assert.ok(buttonTags.length >= 80, 'expected the full dashboard button surface to be scanned');
+  assert.ok(selectors.size >= 30, 'expected event-bound selectors to be inferred from the UI source');
+  assert.ok(![...selectors].some(selector => selectorCoversElement(selector, '<button class="ghost-button feature-added-later">')), 'an unbound class must not pass through a generic button whitelist');
+
+  for (const { source, content, index, button } of buttonTags) {
+    const form = /\btype=["']submit["']/.test(button) ? enclosingForm(content, index) : null;
+    const hasFormSubmitContract = form && [...selectors].some(selector => selectorCoversElement(selector, form));
+    const isCovered = [...selectors].some(selector => selectorCoversElement(selector, button));
+    assert.ok(hasFormSubmitContract || isCovered, `dead button contract in ${source}: ${button}`);
   }
   assert.match(combined, /#avatarButton[\s\S]*addEventListener\('click'/, 'the avatar button must navigate instead of being inert');
   const mergeOrchestrator = sources.find(source => source.name === 'merge-orchestrator.js').content;
