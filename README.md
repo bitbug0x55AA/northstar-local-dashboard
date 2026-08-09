@@ -75,6 +75,10 @@ Only aggregated usage data is stored. You can override the default paths before 
 
 Codex subscription-limit information is read from local Codex rate-limit snapshots when available. Claude Code subscription limits are shown only if local logs expose equivalent data.
 
+Usage measurement uses versioned, provider-specific adapters. Only explicit per-request token deltas are added to totals; cumulative snapshots are not added again. Context occupancy and quota are latest-value gauges and are never inferred from billing usage. The API also reports parser coverage, malformed/skipped records, freshness, confidence, provider errors, and explicit tool-call results. Session IDs derived from file fallback are hashed so local paths are not exposed.
+
+AI Monitoring is deliberately scoped to Codex and Claude Code. Ollama is an optional local tool used by Planner features and remains visible in the separate Local LLM audit category, but it is not included in AI usage, session health, provider quality, or tool-success measurements.
+
 ## Personal Planner
 
 The Planner is intentionally isolated behind an environment flag. To run this branch with the Planner enabled:

@@ -7,6 +7,7 @@ const { readPlanner, applyOperations, syncGithubToPlanner } = require('./server/
 const { GITHUB_POLISH_VERSION, interpretPlannerInput, reviewFitness, polishGithubIssues } = require('./server/planner-llm');
 const { recordEvent, listEvents, acknowledgeEvent, summarize } = require('./server/observability-store');
 const { analyzeMergeWorkspace, discoverWorkspaces } = require('./server/merge-orchestrator');
+const { getLocalUsage: getReliableLocalUsage } = require('./server/usage-monitor');
 
 const PORT = Number(process.env.PORT || 4173);
 const ROOT = __dirname;
@@ -756,7 +757,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method === 'GET' && req.url === '/api/usage') {
-      sendJson(res, 200, getLocalUsage());
+      sendJson(res, 200, getReliableLocalUsage());
       return;
     }
     if (req.method === 'GET' && req.url.startsWith('/api/observability')) {

@@ -118,9 +118,11 @@ test('usage API includes Claude cache tokens and returns local-day metadata', as
   assert.equal(usage.body.sessionMonitor.sessions.length, 2);
   const codexSession = usage.body.sessionMonitor.sessions.find(session => session.provider === 'codex');
   assert.equal(codexSession.model, 'gpt-5-codex');
-  assert.equal(codexSession.latestContextTokens, 180000);
-  assert.equal(codexSession.recommendation.action, 'start_fresh');
-  assert.equal(usage.body.sessionMonitor.alerts.length, 1);
+  assert.equal(codexSession.latestContextTokens, 12000, 'billing usage must not be treated as context occupancy');
+  assert.equal(codexSession.recommendation, null);
+  assert.equal(usage.body.sessionMonitor.alerts.length, 0);
+  assert.equal(usage.body.codex.ingestion.confidence.level, 'verified');
+  assert.equal(usage.body.measurement.schemaVersion, 2);
 });
 
 test('planner API is enabled but requires explicit confirmation for LLM changes', async () => {
