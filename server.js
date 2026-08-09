@@ -388,6 +388,12 @@ function sessionContextTokens(record, usage) {
   const reported = numberFrom(record, SESSION_CONTEXT_FIELDS);
   return reported || ((usage.breakdown.cacheRead || 0) + (usage.breakdown.input || 0));
 }
+const SESSION_ADVISORY = {
+  compactAt: 100000,
+  startFreshAt: 160000,
+  pauseAfterMinutes: 3,
+  activeForMinutes: 15
+};
 
 function tokenUsageFrom(record) {
   const breakdown = {
@@ -398,6 +404,27 @@ function tokenUsageFrom(record) {
   };
   const reportedTotal = numberFrom(record, TOKEN_FIELDS.total);
   return { total: reportedTotal || Object.values(breakdown).reduce((sum, value) => sum + value, 0), breakdown };
+}
+
+function sessionLabel(session, file) {
+  if (!session || session === file) return 'local-log';
+  return String(session).replace(/[^a-zA-Z0-9_-]/g, '').slice(-18) || 'local-log';
+}
+
+function sessionRecommendation(session, now) {
+  const ageMinutes = Math.max(0, Math.round((now - new Date(session.lastActiveAt)) / 60000));
+  const active = ageMinutes <= SESSION_ADVISORY.activeForMinutes;
+  if (!active) return null;
+  if (session.latestContextTokens >= SESSION_ADVISORY.startFreshAt) {
+    return { level: 'high', action: 'start_fresh', message: 'The latest request is very large. Start a fresh session before the next substantial task.' };
+  }
+  if (session.latestContextTokens >= SESSION_ADVISORY.compactAt && ageMinutes >= SESSION_ADVISORY.pauseAfterMinutes) {
+    return { level: 'medium', action: 'compact', message: 'This session has reached a natural pause. Compress its context before continuing.' };
+  }
+  if (session.latestContextTokens >= SESSION_ADVISORY.compactAt) {
+    return { level: 'medium', action: 'prepare_compaction', message: 'The latest request is large. Finish the current step, then compress the context.' };
+  }
+  return null;
 }
 
 function recordDate(record) {
@@ -503,14 +530,14 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
       const observedAt = recordDate(record) || new Date();
       const contextWindow = numberFrom(record, CONTEXT_WINDOW_FIELDS);
       const contextTokens = sessionContextTokens(record, usage);
-      const detail = sessionDetails.get(currentSession) || { id: currentSession, model: null, title: null, contextWindow: 0, contextTokens: 0, updatedAt: null };
+      const sessionDetail = sessionDetails.get(currentSession) || { id: currentSession, provider: sourceName, model: null, title: null, contextWindow: 0, contextTokens: 0, updatedAt: null, tokens: 0, latestContextTokens: 0, lastActiveAt: observedAt.toISOString() };
       const title = sessionTitleFrom(record);
-      if (title) detail.title = title;
-      if (recordModel) detail.model = recordModel;
-      if (contextWindow > detail.contextWindow) detail.contextWindow = contextWindow;
-      if (contextTokens > detail.contextTokens) detail.contextTokens = contextTokens;
-      if (!detail.updatedAt || observedAt >= new Date(detail.updatedAt)) detail.updatedAt = observedAt.toISOString();
-      sessionDetails.set(currentSession, detail);
+      if (title) sessionDetail.title = title;
+      if (recordModel) sessionDetail.model = recordModel;
+      if (contextWindow > sessionDetail.contextWindow) sessionDetail.contextWindow = contextWindow;
+      if (contextTokens > sessionDetail.contextTokens) sessionDetail.contextTokens = contextTokens;
+      if (!sessionDetail.updatedAt || observedAt >= new Date(sessionDetail.updatedAt)) sessionDetail.updatedAt = observedAt.toISOString();
+      sessionDetails.set(currentSession, sessionDetail);
       if (!total) continue;
 
       let fileDate = new Date();
@@ -527,6 +554,14 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
       const model = recordModel || modelBySession.get(currentSession) || currentModel;
       if (model) models.set(model, (models.get(model) || 0) + total);
       sessions.add(currentSession);
+      const detail = sessionDetails.get(currentSession);
+      detail.tokens += total;
+      if (model) detail.model = String(model).slice(0, 80);
+      if (new Date(detail.lastActiveAt) <= date) {
+        detail.latestContextTokens = Math.max(0, usage.breakdown.input + usage.breakdown.cacheRead + usage.breakdown.cacheWrite, total - usage.breakdown.output);
+        detail.lastActiveAt = date.toISOString();
+      }
+      sessionDetails.set(currentSession, detail);
     }
   }
 
@@ -554,6 +589,7 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
     reset: 'local',
     tokenBreakdown: breakdown,
     daily,
+    sessionDetails: Array.from(sessionDetails.values()),
     models: Array.from(models.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, value], index) => ({
       name,
       value: modelTotal ? Math.round(value / modelTotal * 100) : 0,
@@ -596,6 +632,12 @@ function getLocalUsage() {
     return dateKey(date);
   });
   const models = mergeModels([codex.models, claude.models]);
+  const now = new Date();
+  const sessionMonitor = [
+    ...codex.sessionDetails.map(session => ({ ...session, provider: 'codex' })),
+    ...claude.sessionDetails.map(session => ({ ...session, provider: 'claude' }))
+  ].map(session => ({ ...session, recommendation: sessionRecommendation(session, now) }))
+    .sort((left, right) => new Date(right.lastActiveAt) - new Date(left.lastActiveAt));
   for (const [provider, usage] of [['codex', codex], ['claude-code', claude]]) {
     const usedPercent = usage.limits?.primary?.usedPercent;
     if (Number.isFinite(Number(usedPercent))) {
@@ -634,6 +676,11 @@ function getLocalUsage() {
     dailyByProvider: { codex: codex.daily, claude: claude.daily },
     dailyDates,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'local',
+    sessionMonitor: {
+      thresholds: SESSION_ADVISORY,
+      sessions: sessionMonitor.slice(0, 30),
+      alerts: sessionMonitor.filter(session => session.recommendation).slice(0, 8)
+    },
     models,
     sessionWindows: [...codex.sessionWindows.map(session => ({ ...session, provider: 'Codex' })), ...claude.sessionWindows.map(session => ({ ...session, provider: 'Claude Code' }))].sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)),
     fetchedAt: new Date().toISOString()

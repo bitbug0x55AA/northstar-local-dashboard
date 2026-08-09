@@ -48,7 +48,7 @@ test.before(async () => {
   const now = new Date().toISOString();
   fs.mkdirSync(codexUsagePath, { recursive: true });
   fs.mkdirSync(claudeUsagePath, { recursive: true });
-  fs.writeFileSync(path.join(codexUsagePath, 'session.jsonl'), `${JSON.stringify({ timestamp: now, type: 'event_msg', title: 'Review auth middleware', payload: { session_id: 'codex-session', model: 'gpt-test', info: { context_window: 128000, last_token_usage: { total_tokens: 100, context_tokens: 12000 } } } })}\n`);
+  fs.writeFileSync(path.join(codexUsagePath, 'session.jsonl'), `${JSON.stringify({ timestamp: now, type: 'event_msg', title: 'Review auth middleware', payload: { session_id: 'codex-session', model: 'gpt-5-codex', info: { context_window: 128000, last_token_usage: { total_tokens: 180000, input_tokens: 180000, context_tokens: 12000 } } } })}\n`);
   fs.writeFileSync(path.join(claudeUsagePath, 'session.jsonl'), `${JSON.stringify({ timestamp: now, type: 'assistant', sessionId: 'claude-session', message: { model: 'claude-test', usage: { input_tokens: 20, output_tokens: 30, cache_read_input_tokens: 400, cache_creation_input_tokens: 50 } } })}\n`);
   server = spawn(process.execPath, ['server.js'], {
     cwd: root,
@@ -103,7 +103,7 @@ test('HTTP API serves the dashboard and protects state-changing endpoints', asyn
 test('usage API includes Claude cache tokens and returns local-day metadata', async () => {
   const usage = await request('GET', '/api/usage');
   assert.equal(usage.status, 200);
-  assert.equal(usage.body.codex.monthTokens, 100);
+  assert.equal(usage.body.codex.monthTokens, 180000);
   assert.equal(usage.body.claude.monthTokens, 500, 'Claude cache read and creation tokens must be included');
   assert.equal(usage.body.claude.tokenBreakdown.cacheRead, 400);
   assert.equal(usage.body.claude.tokenBreakdown.cacheWrite, 50);
@@ -114,6 +114,12 @@ test('usage API includes Claude cache tokens and returns local-day metadata', as
   assert.equal(usage.body.sessionWindows[0].title, 'Review auth middleware');
   assert.equal(usage.body.sessionWindows[0].shortId, 'codex-se');
   assert.equal(usage.body.sessionWindows[0].needsAttention, false, 'a large prompt with ample context space must not warn');
+  assert.equal(usage.body.sessionMonitor.sessions.length, 2);
+  const codexSession = usage.body.sessionMonitor.sessions.find(session => session.provider === 'codex');
+  assert.equal(codexSession.model, 'gpt-5-codex');
+  assert.equal(codexSession.latestContextTokens, 180000);
+  assert.equal(codexSession.recommendation.action, 'start_fresh');
+  assert.equal(usage.body.sessionMonitor.alerts.length, 1);
 });
 
 test('planner API is enabled but requires explicit confirmation for LLM changes', async () => {
