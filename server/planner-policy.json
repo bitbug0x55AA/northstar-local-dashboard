@@ -17,7 +17,12 @@
     "create_performance_initiative": ["goalId", "title", "status", "dueAt", "progress", "baseline", "targetOutcome", "metricAfter"],
     "create_performance_evidence": ["goalId", "controlId", "initiativeId", "occurredAt", "contribution", "outcome", "metricBefore", "metricAfter", "evidenceType", "evidenceRef", "confidentiality"],
     "create_performance_checkpoint": ["title", "dueAt", "status", "requiredOutput"],
-    "update_performance_record": ["recordType", "id", "title", "status", "dueAt", "weight", "progress", "successCriteria", "frequency", "baseline", "targetOutcome", "metricAfter", "contribution", "outcome", "metricBefore", "metricAfter", "evidenceType", "evidenceRef", "confidentiality", "requiredOutput"]
+    "update_performance_record": ["recordType", "id", "title", "status", "dueAt", "weight", "progress", "successCriteria", "frequency", "baseline", "targetOutcome", "metricAfter", "contribution", "outcome", "metricBefore", "metricAfter", "evidenceType", "evidenceRef", "confidentiality", "requiredOutput"],
+    "log_fitness_session": ["plan", "session", "performedAt", "durationMinutes", "sets", "reps", "loadKg", "rpe", "quality", "soreness24", "soreness48", "notes"],
+    "log_hike": ["performedAt", "durationMinutes", "distanceKm", "elevationM", "effort", "notes"],
+    "update_fitness_profile": ["heightCm", "weightKg"],
+    "log_fitness_weight": ["weightKg", "measuredAt"],
+    "update_fitness_session": ["id", "soreness24", "soreness48"]
   },
   "allowedStatuses": ["planned", "in-progress", "done", "cancelled"],
   "allowedPriorities": ["low", "medium", "high"],

@@ -96,6 +96,37 @@ async function interpretPlannerInput(input) {
   return validateProposal(extractJson(content));
 }
 
+async function reviewFitness(fitness) {
+  const endpoint = process.env.NORTHSTAR_LLM_URL || '';
+  const model = process.env.NORTHSTAR_LLM_MODEL || '';
+  if (!endpoint || !model) {
+    const error = new Error('Local LLM is not configured. Set NORTHSTAR_LLM_URL and NORTHSTAR_LLM_MODEL.');
+    error.statusCode = 503;
+    throw error;
+  }
+  const snapshot = {
+    profile: fitness?.profile || null,
+    strengthLogs: Array.isArray(fitness?.strengthLogs) ? fitness.strengthLogs.slice(0, 18) : [],
+    hikes: Array.isArray(fitness?.hikes) ? fitness.hikes.slice(0, 12) : []
+  };
+  const system = [
+    'You are a concise, non-medical fitness log reviewer. The data is private and stays on the user device.',
+    'Review only the provided hiking and glute training records. Consider session distribution, training volume, RPE, movement quality, 24h/48h soreness, and the supplied height/weight context.',
+    'Write Simplified Chinese. Return plain text with exactly three short sections: 观察, 建议, 下次记录重点.',
+    'Do not diagnose injury, prescribe treatment, shame body size, invent missing data, or make claims beyond the records. If pain is sharp, worsening, or unusual, advise pausing and seeking qualified medical advice.'
+  ].join('\n');
+  const isOllamaApi = /\/api\/chat(?:\?|$)/i.test(endpoint);
+  const response = await requestJson(endpoint, isOllamaApi ? {
+    model, stream: false, keep_alive: process.env.NORTHSTAR_LLM_KEEP_ALIVE || '5m',
+    messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(snapshot) }]
+  } : {
+    model, temperature: 0.2, messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(snapshot) }]
+  });
+  const content = String(response.choices?.[0]?.message?.content || response.message?.content || response.output_text || '').trim();
+  if (!content) throw new Error('Local LLM returned an empty fitness review');
+  return { review: content.slice(0, 5000), model };
+}
+
 function githubIssueRef(repo, number) {
   return `github:${String(repo || '').trim()}#${number}`;
 }
@@ -209,4 +240,4 @@ async function polishGithubIssues(issues, language = 'zh') {
   };
 }
 
-module.exports = { GITHUB_POLISH_BATCH_SIZE, GITHUB_POLISH_VERSION, interpretPlannerInput, polishGithubIssues };
+module.exports = { GITHUB_POLISH_BATCH_SIZE, GITHUB_POLISH_VERSION, interpretPlannerInput, reviewFitness, polishGithubIssues };

@@ -4,7 +4,7 @@ const path = require('path');
 const https = require('https');
 const { spawn } = require('child_process');
 const { readPlanner, applyOperations, syncGithubToPlanner } = require('./server/planner-store');
-const { GITHUB_POLISH_VERSION, interpretPlannerInput, polishGithubIssues } = require('./server/planner-llm');
+const { GITHUB_POLISH_VERSION, interpretPlannerInput, reviewFitness, polishGithubIssues } = require('./server/planner-llm');
 const { recordEvent, listEvents, acknowledgeEvent, summarize } = require('./server/observability-store');
 const { analyzeMergeWorkspace, discoverWorkspaces } = require('./server/merge-orchestrator');
 
@@ -876,6 +876,12 @@ const server = http.createServer(async (req, res) => {
       const body = JSON.parse(await readBody(req) || '{}');
       if (!String(body.input || '').trim()) throw new Error('Planner input is required');
       sendJson(res, 200, await interpretPlannerInput(body.input));
+      return;
+    }
+    if (PLANNER_ENABLED && req.method === 'POST' && req.url === '/api/planner/fitness-review') {
+      assertLocalOrigin(req);
+      const planner = readPlanner();
+      sendJson(res, 200, await reviewFitness(planner.fitness));
       return;
     }
     if (PLANNER_ENABLED && req.method === 'POST' && req.url === '/api/planner/llm-test') {

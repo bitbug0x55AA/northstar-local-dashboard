@@ -21,6 +21,7 @@ function emptyPlanner() {
     tasks: [],
     events: [],
     progressLogs: [],
+    fitness: { profile: null, weightLogs: [], strengthLogs: [], hikes: [] },
     performance: { goals: [], controls: [], initiatives: [], evidence: [], checkpoints: [] },
     categories: ['安全技能学习与实验室', 'GitHub 开源项目', '工作绩效管理', '个人健身']
   };
@@ -43,6 +44,7 @@ function readPlanner() {
       tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
       events: Array.isArray(parsed.events) ? parsed.events : [],
       progressLogs: Array.isArray(parsed.progressLogs) ? parsed.progressLogs : [],
+      fitness: normalizeFitness(parsed.fitness),
       performance: normalizePerformance(parsed.performance),
       categories: Array.isArray(parsed.categories) ? parsed.categories.map(item => asText(item)).filter(Boolean).slice(0, 30) : emptyPlanner().categories
     };
@@ -64,7 +66,7 @@ function readPlanner() {
 function writePlanner(data) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   if (fs.existsSync(DATA_FILE)) fs.copyFileSync(DATA_FILE, BACKUP_FILE);
-  const next = { ...data, schemaVersion: 2, performance: normalizePerformance(data.performance), updatedAt: new Date().toISOString() };
+  const next = { ...data, schemaVersion: 2, fitness: normalizeFitness(data.fitness), performance: normalizePerformance(data.performance), updatedAt: new Date().toISOString() };
   const tempFile = `${DATA_FILE}.${process.pid}.tmp`;
   fs.writeFileSync(tempFile, JSON.stringify(next, null, 2), { encoding: 'utf8', mode: 0o600 });
   try {
@@ -102,6 +104,16 @@ function normalizePerformance(value) {
     initiatives: Array.isArray(source.initiatives) ? source.initiatives : [],
     evidence: Array.isArray(source.evidence) ? source.evidence : [],
     checkpoints: Array.isArray(source.checkpoints) ? source.checkpoints : []
+  };
+}
+
+function normalizeFitness(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  return {
+    profile: source.profile && typeof source.profile === 'object' ? { heightCm: Number(source.profile.heightCm) || null, weightKg: Number(source.profile.weightKg) || null, updatedAt: source.profile.updatedAt || null } : null,
+    weightLogs: Array.isArray(source.weightLogs) ? source.weightLogs : [],
+    strengthLogs: Array.isArray(source.strengthLogs) ? source.strengthLogs : [],
+    hikes: Array.isArray(source.hikes) ? source.hikes : []
   };
 }
 
@@ -175,6 +187,44 @@ function createEvent(data, operation) {
   return event;
 }
 
+function logFitnessSession(data, operation) {
+  const record = { id: randomUUID(), type: 'strength', ...operation, createdAt: new Date().toISOString() };
+  delete record.type;
+  data.fitness = normalizeFitness(data.fitness);
+  data.fitness.strengthLogs.unshift({ ...record, type: 'strength' });
+  return record;
+}
+
+function logHike(data, operation) {
+  const record = { id: randomUUID(), type: 'hike', ...operation, createdAt: new Date().toISOString() };
+  delete record.type;
+  data.fitness = normalizeFitness(data.fitness);
+  data.fitness.hikes.unshift({ ...record, type: 'hike' });
+  return record;
+}
+
+function updateFitnessProfile(data, operation) {
+  data.fitness = normalizeFitness(data.fitness);
+  data.fitness.profile = { heightCm: operation.heightCm, weightKg: operation.weightKg, updatedAt: new Date().toISOString() };
+  return data.fitness.profile;
+}
+
+function logFitnessWeight(data, operation) {
+  data.fitness = normalizeFitness(data.fitness);
+  const record = { id: randomUUID(), weightKg: operation.weightKg, measuredAt: operation.measuredAt, createdAt: new Date().toISOString() };
+  data.fitness.weightLogs.unshift(record);
+  if (data.fitness.profile) data.fitness.profile.weightKg = operation.weightKg;
+  return record;
+}
+
+function updateFitnessSession(data, operation) {
+  data.fitness = normalizeFitness(data.fitness);
+  const record = findById(data.fitness.strengthLogs, operation.id, 'Fitness session');
+  for (const field of ['soreness24', 'soreness48']) if (operation[field] !== undefined) record[field] = operation[field];
+  record.updatedAt = new Date().toISOString();
+  return record;
+}
+
 function applyOperation(data, operation) {
   if (!operation || typeof operation !== 'object') throw new Error('Each planner operation must be an object');
   const type = asText(operation.type);
@@ -198,6 +248,11 @@ function applyOperation(data, operation) {
     return { type, item: name };
   }
   if (type === 'create_event') return { type, item: createEvent(data, operation) };
+  if (type === 'log_fitness_session') return { type, item: logFitnessSession(data, operation) };
+  if (type === 'log_hike') return { type, item: logHike(data, operation) };
+  if (type === 'update_fitness_profile') return { type, item: updateFitnessProfile(data, operation) };
+  if (type === 'log_fitness_weight') return { type, item: logFitnessWeight(data, operation) };
+  if (type === 'update_fitness_session') return { type, item: updateFitnessSession(data, operation) };
   if (type === 'log_progress') {
     const log = {
       id: randomUUID(),

@@ -7,7 +7,7 @@
 
   const state = {
     data: { goals: [], projects: [], tasks: [], events: [], progressLogs: [], categories: shared.DEFAULT_CATEGORIES, performance: { goals: [], controls: [], initiatives: [], evidence: [], checkpoints: [] } },
-    activePage: 'overview', editingTaskId: null, draftCategory: null,
+    activePage: 'overview', editingTaskId: null, draftCategory: null, fitnessMode: null, fitnessSession: null, fitnessReview: null,
     llm: { configured: false, tested: false, ok: false, testing: false, model: null, latencyMs: null, error: null }
   };
   const storageKey = 'northstar.plannerSubpage';
@@ -17,8 +17,9 @@
 
   async function apply(operations, confirmed = false) { const result = await shared.request('/api/planner/operations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operations, confirmed }) }); state.data = result.data; render(); }
   function showError(message) { const preview = document.querySelector('#plannerPreview'); if (preview) preview.innerHTML = `<div class="error-note">${shared.tr('操作失败：', 'Operation failed: ')}${shared.escapeHtml(message)}</div>`; }
-  function pageContent() { const category = shared.categoryFromPage(state.activePage); if (state.activePage === 'overview') return window.NorthstarPlannerTasks.renderOverview(state.data, categories(), tasksFor); if (state.activePage === 'add') return `<div class="planner-grid planner-input-grid">${window.NorthstarPlannerTasks.renderAddPage(state.data, state, categories())}${window.NorthstarPlannerLlm.render(state.llm)}</div>`; if (category === shared.WORK_PERFORMANCE_CATEGORY) return window.NorthstarPlannerPerformance.render(state.data); return window.NorthstarPlannerTasks.renderCategory(category, tasksFor); }
+  function pageContent() { const category = shared.categoryFromPage(state.activePage); if (state.activePage === 'overview') return window.NorthstarPlannerTasks.renderOverview(state.data, categories(), tasksFor); if (state.activePage === 'add') return `<div class="planner-grid planner-input-grid">${window.NorthstarPlannerTasks.renderAddPage(state.data, state, categories())}${window.NorthstarPlannerLlm.render(state.llm)}</div>`; if (category === shared.WORK_PERFORMANCE_CATEGORY) return window.NorthstarPlannerPerformance.render(state.data); if (category === '个人健身') return window.NorthstarPlannerFitness.render(state.data, state); return window.NorthstarPlannerTasks.renderCategory(category, tasksFor); }
   function render() {
+    state.render = render;
     const currentCategory = shared.categoryFromPage(state.activePage);
     if (state.activePage !== 'overview' && state.activePage !== 'add' && !categories().includes(currentCategory)) state.activePage = 'overview';
     localStorage.setItem(storageKey, state.activePage);
@@ -27,6 +28,7 @@
     view.innerHTML = `<div class="page-heading planner-heading"><div><div class="eyebrow">PERSONAL OPERATING SYSTEM</div><h1>${shared.tr('个人计划', 'Personal Planner')}</h1><p>${shared.tr('为每一个重点方向提供独立页面，导航位于左侧栏。', 'Dedicated pages for each important direction, navigated from the left sidebar.')}</p></div><span class="source-pill"><i></i>${githubCount ? `GITHUB LINKED · ${githubCount}` : 'LOCAL PLANNER'}</span></div><div class="planner-page-content">${pageContent()}</div>`;
     window.NorthstarPlannerTasks.bind(state.data, state, apply, render, showError);
     window.NorthstarPlannerPerformance.bind(apply, showError);
+    window.NorthstarPlannerFitness.bind(state, apply, showError);
     window.NorthstarPlannerLlm.bind(state.llm, apply, showError);
   }
   function keepNavigationLabel() { const label = shared.tr('个人计划', 'Personal Planner'); if (nav.lastChild) nav.lastChild.textContent = label; const title = document.querySelector('#pageTitle'); if (title && view.classList.contains('active-view')) title.textContent = label; }

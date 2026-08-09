@@ -120,6 +120,46 @@ function normalizeOperation(input, source) {
     if (output.dueAt !== undefined) output.dueAt = normalizeDate(output.dueAt, 'Performance dueAt');
     for (const field of ['weight', 'progress']) if (output[field] !== undefined && (!Number.isFinite(Number(output[field])) || Number(output[field]) < 0 || Number(output[field]) > 100)) throw new Error(`Performance ${field} must be between 0 and 100`);
     if (!Object.keys(output).some(key => !['type', 'recordType', 'id', 'source'].includes(key))) throw new Error('Performance update has no editable fields');
+  } else if (type === 'log_fitness_session') {
+    output.plan = boundedText(output.plan, 'Fitness plan', true, 40);
+    if (output.plan !== 'strength') throw new Error('Fitness plan is invalid');
+    output.session = boundedText(output.session, 'Fitness session', true, 10);
+    if (!['A', 'B', 'C'].includes(output.session)) throw new Error('Fitness session must be A, B, or C');
+    output.performedAt = normalizeDate(output.performedAt, 'Fitness performedAt') || new Date().toISOString();
+    for (const field of ['durationMinutes', 'sets', 'reps', 'loadKg', 'rpe', 'quality', 'soreness24', 'soreness48']) {
+      if (['soreness24', 'soreness48'].includes(field) && (output[field] === '' || output[field] === null || output[field] === undefined)) { output[field] = null; continue; }
+      const value = Number(output[field]);
+      if (!Number.isFinite(value) || value < 0 || (['rpe', 'soreness24', 'soreness48'].includes(field) && value > 10) || (field === 'quality' && value > 5)) throw new Error(`Fitness ${field} is invalid`);
+      output[field] = value;
+    }
+    output.notes = boundedText(output.notes, 'Fitness notes', false, 1000);
+  } else if (type === 'log_hike') {
+    output.performedAt = normalizeDate(output.performedAt, 'Hike performedAt') || new Date().toISOString();
+    for (const field of ['durationMinutes', 'distanceKm', 'elevationM', 'effort']) {
+      const value = Number(output[field]);
+      if (!Number.isFinite(value) || value < 0 || (field === 'effort' && value > 10)) throw new Error(`Hike ${field} is invalid`);
+      output[field] = value;
+    }
+    output.notes = boundedText(output.notes, 'Hike notes', false, 1000);
+  } else if (type === 'update_fitness_profile') {
+    for (const field of ['heightCm', 'weightKg']) {
+      const value = Number(output[field]);
+      if (!Number.isFinite(value) || value <= 0 || value > (field === 'heightCm' ? 260 : 400)) throw new Error(`Fitness ${field} is invalid`);
+      output[field] = value;
+    }
+  } else if (type === 'log_fitness_weight') {
+    output.weightKg = Number(output.weightKg);
+    if (!Number.isFinite(output.weightKg) || output.weightKg <= 0 || output.weightKg > 400) throw new Error('Fitness weightKg is invalid');
+    output.measuredAt = normalizeDate(output.measuredAt, 'Fitness measuredAt') || new Date().toISOString();
+  } else if (type === 'update_fitness_session') {
+    output.id = boundedText(output.id, 'Fitness session id', true);
+    for (const field of ['soreness24', 'soreness48']) {
+      if (output[field] === undefined) continue;
+      const value = Number(output[field]);
+      if (!Number.isFinite(value) || value < 0 || value > 10) throw new Error(`Fitness ${field} is invalid`);
+      output[field] = value;
+    }
+    if (output.soreness24 === undefined && output.soreness48 === undefined) throw new Error('Fitness session update has no editable fields');
   }
 
   output.source = normalizedSource(output.source, source);
@@ -145,6 +185,7 @@ function validateProposal(proposal) {
   const normalized = validateOperations(proposal.operations, { source: 'llm' });
   if (normalized.operations.some(operation => operation.type === 'delete_task')) throw new Error('LLM cannot delete Planner tasks');
   if (normalized.operations.some(operation => operation.type.includes('performance'))) throw new Error('LLM cannot process performance-management records');
+  if (normalized.operations.some(operation => operation.type.includes('fitness') || operation.type === 'log_hike')) throw new Error('LLM cannot process private tracking records');
   return { operations: normalized.operations, needsConfirmation: true, clarification };
 }
 
