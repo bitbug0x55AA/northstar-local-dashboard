@@ -82,6 +82,44 @@ function normalizeOperation(input, source) {
     output.id = boundedText(output.id, 'Task id', true);
   } else if (type === 'create_category' || type === 'delete_category') {
     output.name = boundedText(output.name, 'Category name', true, 80);
+  } else if (type === 'create_performance_goal') {
+    output.title = boundedText(output.title, 'Performance goal title', true, 160);
+    output.weight = Number(output.weight);
+    if (!Number.isFinite(output.weight) || output.weight < 0 || output.weight > 100) throw new Error('Performance goal weight must be between 0 and 100');
+    output.successCriteria = boundedText(output.successCriteria, 'Success criteria', false, 1000);
+    output.dueAt = normalizeDate(output.dueAt, 'Goal dueAt');
+  } else if (type === 'create_performance_control') {
+    output.goalId = boundedText(output.goalId, 'Control goal id', true);
+    output.title = boundedText(output.title, 'Control title', true, 160);
+    output.frequency = boundedText(output.frequency, 'Control frequency', false, 80);
+    output.dueAt = normalizeDate(output.dueAt, 'Control dueAt');
+    output.status = ['not-assessed', 'compliant', 'watch', 'exception'].includes(output.status) ? output.status : 'not-assessed';
+  } else if (type === 'create_performance_initiative') {
+    output.goalId = boundedText(output.goalId, 'Initiative goal id', true);
+    output.title = boundedText(output.title, 'Initiative title', true, 160);
+    output.status = POLICY.allowedStatuses.includes(output.status) ? output.status : 'planned';
+    output.dueAt = normalizeDate(output.dueAt, 'Initiative dueAt');
+    output.progress = Number(output.progress);
+    if (!Number.isFinite(output.progress) || output.progress < 0 || output.progress > 100) throw new Error('Initiative progress must be between 0 and 100');
+    for (const field of ['baseline', 'targetOutcome', 'metricAfter']) output[field] = boundedText(output[field], `Initiative ${field}`, false, 1000);
+  } else if (type === 'create_performance_evidence') {
+    for (const field of ['goalId', 'controlId', 'initiativeId']) output[field] = boundedText(output[field], `Evidence ${field}`);
+    output.occurredAt = normalizeDate(output.occurredAt, 'Evidence occurredAt');
+    for (const field of ['contribution', 'outcome', 'metricBefore', 'metricAfter', 'evidenceType', 'evidenceRef', 'confidentiality']) output[field] = boundedText(output[field], `Evidence ${field}`, field === 'contribution' || field === 'outcome' || field === 'evidenceRef', field === 'evidenceRef' ? 500 : 1000);
+  } else if (type === 'create_performance_checkpoint') {
+    output.title = boundedText(output.title, 'Checkpoint title', true, 160);
+    output.dueAt = normalizeDate(output.dueAt, 'Checkpoint dueAt', true);
+    output.status = POLICY.allowedStatuses.includes(output.status) ? output.status : 'planned';
+    output.requiredOutput = boundedText(output.requiredOutput, 'Checkpoint required output', false, 1000);
+  } else if (type === 'update_performance_record') {
+    output.recordType = boundedText(output.recordType, 'Performance record type', true, 40);
+    if (!['goal', 'control', 'initiative', 'evidence', 'checkpoint'].includes(output.recordType)) throw new Error('Performance record type is invalid');
+    output.id = boundedText(output.id, 'Performance record id', true);
+    for (const field of ['title', 'successCriteria', 'frequency', 'baseline', 'targetOutcome', 'metricAfter', 'contribution', 'outcome', 'metricBefore', 'metricAfter', 'evidenceType', 'evidenceRef', 'confidentiality', 'requiredOutput']) if (output[field] !== undefined) output[field] = boundedText(output[field], `Performance ${field}`, false, field === 'evidenceRef' ? 500 : 1000);
+    if (output.status !== undefined && ![...POLICY.allowedStatuses, 'not-assessed', 'compliant', 'watch', 'exception'].includes(output.status)) throw new Error('Performance status is invalid');
+    if (output.dueAt !== undefined) output.dueAt = normalizeDate(output.dueAt, 'Performance dueAt');
+    for (const field of ['weight', 'progress']) if (output[field] !== undefined && (!Number.isFinite(Number(output[field])) || Number(output[field]) < 0 || Number(output[field]) > 100)) throw new Error(`Performance ${field} must be between 0 and 100`);
+    if (!Object.keys(output).some(key => !['type', 'recordType', 'id', 'source'].includes(key))) throw new Error('Performance update has no editable fields');
   }
 
   output.source = normalizedSource(output.source, source);
@@ -106,6 +144,7 @@ function validateProposal(proposal) {
   }
   const normalized = validateOperations(proposal.operations, { source: 'llm' });
   if (normalized.operations.some(operation => operation.type === 'delete_task')) throw new Error('LLM cannot delete Planner tasks');
+  if (normalized.operations.some(operation => operation.type.includes('performance'))) throw new Error('LLM cannot process performance-management records');
   return { operations: normalized.operations, needsConfirmation: true, clarification };
 }
 

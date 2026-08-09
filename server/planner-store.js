@@ -13,13 +13,14 @@ const BACKUP_FILE = path.join(DATA_DIR, 'planner-data.json.bak');
 
 function emptyPlanner() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     updatedAt: null,
     goals: [],
     projects: [],
     tasks: [],
     events: [],
     progressLogs: [],
+    performance: { goals: [], controls: [], initiatives: [], evidence: [], checkpoints: [] },
     categories: ['安全技能学习与实验室', 'GitHub 开源项目', '工作绩效管理', '个人健身']
   };
 }
@@ -35,12 +36,13 @@ function readPlanner() {
     return {
       ...emptyPlanner(),
       ...parsed,
-      schemaVersion: 1,
+      schemaVersion: 2,
       goals: Array.isArray(parsed.goals) ? parsed.goals : [],
       projects: Array.isArray(parsed.projects) ? parsed.projects : [],
       tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
       events: Array.isArray(parsed.events) ? parsed.events : [],
       progressLogs: Array.isArray(parsed.progressLogs) ? parsed.progressLogs : [],
+      performance: normalizePerformance(parsed.performance),
       categories: Array.isArray(parsed.categories) ? parsed.categories.map(item => asText(item)).filter(Boolean).slice(0, 30) : emptyPlanner().categories
     };
   } catch (error) {
@@ -53,7 +55,7 @@ function readPlanner() {
 function writePlanner(data) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   if (fs.existsSync(DATA_FILE)) fs.copyFileSync(DATA_FILE, BACKUP_FILE);
-  const next = { ...data, schemaVersion: 1, updatedAt: new Date().toISOString() };
+  const next = { ...data, schemaVersion: 2, performance: normalizePerformance(data.performance), updatedAt: new Date().toISOString() };
   const tempFile = `${DATA_FILE}.${process.pid}.tmp`;
   fs.writeFileSync(tempFile, JSON.stringify(next, null, 2), { encoding: 'utf8', mode: 0o600 });
   try {
@@ -81,6 +83,42 @@ function findById(items, id, label) {
   const item = items.find(entry => entry.id === id);
   if (!item) throw new Error(`${label} was not found`);
   return item;
+}
+
+function normalizePerformance(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  return {
+    goals: Array.isArray(source.goals) ? source.goals : [],
+    controls: Array.isArray(source.controls) ? source.controls : [],
+    initiatives: Array.isArray(source.initiatives) ? source.initiatives : [],
+    evidence: Array.isArray(source.evidence) ? source.evidence : [],
+    checkpoints: Array.isArray(source.checkpoints) ? source.checkpoints : []
+  };
+}
+
+function performanceRecord(data, type, operation) {
+  const performance = data.performance = normalizePerformance(data.performance);
+  const collectionByType = { goal: 'goals', control: 'controls', initiative: 'initiatives', evidence: 'evidence', checkpoint: 'checkpoints' };
+  const collection = collectionByType[type];
+  if (!collection) throw new Error('Performance record type is invalid');
+  const now = new Date().toISOString();
+  const record = { id: randomUUID(), type, createdAt: now, updatedAt: now };
+  if (type === 'goal') Object.assign(record, { title: operation.title, weight: operation.weight, successCriteria: operation.successCriteria || null, dueAt: operation.dueAt || null, status: 'not-assessed' });
+  if (type === 'control') Object.assign(record, { goalId: operation.goalId, title: operation.title, frequency: operation.frequency || null, dueAt: operation.dueAt || null, status: operation.status });
+  if (type === 'initiative') Object.assign(record, { goalId: operation.goalId, title: operation.title, status: operation.status, dueAt: operation.dueAt || null, progress: operation.progress, baseline: operation.baseline || null, targetOutcome: operation.targetOutcome || null, metricAfter: operation.metricAfter || null });
+  if (type === 'evidence') Object.assign(record, { goalId: operation.goalId || null, controlId: operation.controlId || null, initiativeId: operation.initiativeId || null, occurredAt: operation.occurredAt || now, contribution: operation.contribution, outcome: operation.outcome, metricBefore: operation.metricBefore || null, metricAfter: operation.metricAfter || null, evidenceType: operation.evidenceType || null, evidenceRef: operation.evidenceRef, confidentiality: operation.confidentiality || 'internal' });
+  if (type === 'checkpoint') Object.assign(record, { title: operation.title, dueAt: operation.dueAt || null, status: operation.status, requiredOutput: operation.requiredOutput || null });
+  performance[collection].unshift(record);
+  return record;
+}
+
+function updatePerformanceRecord(data, operation) {
+  const collection = { goal: 'goals', control: 'controls', initiative: 'initiatives', evidence: 'evidence', checkpoint: 'checkpoints' }[operation.recordType];
+  const record = findById(normalizePerformance(data.performance)[collection], operation.id, 'Performance record');
+  const allowed = ['title', 'status', 'dueAt', 'weight', 'progress', 'successCriteria', 'frequency', 'baseline', 'targetOutcome', 'metricAfter', 'contribution', 'outcome', 'metricBefore', 'evidenceType', 'evidenceRef', 'confidentiality', 'requiredOutput'];
+  for (const field of allowed) if (field in operation) record[field] = operation[field];
+  record.updatedAt = new Date().toISOString();
+  return record;
 }
 
 function createTask(data, operation) {
@@ -132,6 +170,12 @@ function applyOperation(data, operation) {
   if (!operation || typeof operation !== 'object') throw new Error('Each planner operation must be an object');
   const type = asText(operation.type);
   if (type === 'create_task') return { type, item: createTask(data, operation) };
+  if (type === 'create_performance_goal') return { type, item: performanceRecord(data, 'goal', operation) };
+  if (type === 'create_performance_control') return { type, item: performanceRecord(data, 'control', operation) };
+  if (type === 'create_performance_initiative') return { type, item: performanceRecord(data, 'initiative', operation) };
+  if (type === 'create_performance_evidence') return { type, item: performanceRecord(data, 'evidence', operation) };
+  if (type === 'create_performance_checkpoint') return { type, item: performanceRecord(data, 'checkpoint', operation) };
+  if (type === 'update_performance_record') return { type, item: updatePerformanceRecord(data, operation) };
   if (type === 'create_category') {
     const name = required(operation.name, 'Category name');
     data.categories = Array.isArray(data.categories) ? data.categories : [];

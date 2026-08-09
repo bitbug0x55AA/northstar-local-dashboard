@@ -48,7 +48,7 @@ test.before(async () => {
   const now = new Date().toISOString();
   fs.mkdirSync(codexUsagePath, { recursive: true });
   fs.mkdirSync(claudeUsagePath, { recursive: true });
-  fs.writeFileSync(path.join(codexUsagePath, 'session.jsonl'), `${JSON.stringify({ timestamp: now, type: 'event_msg', payload: { session_id: 'codex-session', info: { last_token_usage: { total_tokens: 100 } } } })}\n`);
+  fs.writeFileSync(path.join(codexUsagePath, 'session.jsonl'), `${JSON.stringify({ timestamp: now, type: 'event_msg', title: 'Review auth middleware', payload: { session_id: 'codex-session', model: 'gpt-test', info: { context_window: 128000, last_token_usage: { total_tokens: 100, context_tokens: 12000 } } } })}\n`);
   fs.writeFileSync(path.join(claudeUsagePath, 'session.jsonl'), `${JSON.stringify({ timestamp: now, type: 'assistant', sessionId: 'claude-session', message: { model: 'claude-test', usage: { input_tokens: 20, output_tokens: 30, cache_read_input_tokens: 400, cache_creation_input_tokens: 50 } } })}\n`);
   server = spawn(process.execPath, ['server.js'], {
     cwd: root,
@@ -111,6 +111,9 @@ test('usage API includes Claude cache tokens and returns local-day metadata', as
   assert.equal(usage.body.dailyByProvider.claude.length, 14);
   assert.equal(usage.body.dailyDates.length, 14);
   assert.equal(typeof usage.body.timezone, 'string');
+  assert.equal(usage.body.sessionWindows[0].title, 'Review auth middleware');
+  assert.equal(usage.body.sessionWindows[0].shortId, 'codex-se');
+  assert.equal(usage.body.sessionWindows[0].needsAttention, false, 'a large prompt with ample context space must not warn');
 });
 
 test('planner API is enabled but requires explicit confirmation for LLM changes', async () => {

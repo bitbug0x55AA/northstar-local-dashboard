@@ -370,6 +370,25 @@ const TOKEN_FIELDS = {
   cacheWrite: ['cache_creation_input_tokens', 'cache_write_input_tokens', 'usage.cache_creation_input_tokens', 'usage.cache_write_input_tokens', 'message.usage.cache_creation_input_tokens', 'message.usage.cache_write_input_tokens', 'payload.info.last_token_usage.cache_write_input_tokens']
 };
 
+const SESSION_CONTEXT_FIELDS = ['context_tokens', 'contextTokens', 'usage.context_tokens', 'usage.contextTokens', 'message.usage.context_tokens', 'message.usage.contextTokens', 'payload.info.last_token_usage.context_tokens', 'payload.info.context_tokens'];
+const CONTEXT_WINDOW_FIELDS = ['context_window', 'contextWindow', 'context_window_tokens', 'contextWindowTokens', 'model_context_window', 'modelContextWindow', 'usage.context_window', 'usage.contextWindow', 'payload.info.context_window', 'payload.info.contextWindow'];
+
+function cleanSessionLabel(value) {
+  if (typeof value !== 'string') return null;
+  const label = value.replace(/\s+/g, ' ').trim();
+  return label ? label.slice(0, 96) : null;
+}
+
+function sessionTitleFrom(record) {
+  const candidates = [record.session_name, record.sessionName, record.title, record.conversation_title, record.conversationTitle, record.payload?.session_name, record.payload?.sessionName, record.payload?.title, record.payload?.conversation_title, record.payload?.conversationTitle, record.payload?.input?.text, record.message?.title];
+  return candidates.map(cleanSessionLabel).find(Boolean) || null;
+}
+
+function sessionContextTokens(record, usage) {
+  const reported = numberFrom(record, SESSION_CONTEXT_FIELDS);
+  return reported || ((usage.breakdown.cacheRead || 0) + (usage.breakdown.input || 0));
+}
+
 function tokenUsageFrom(record) {
   const breakdown = {
     input: numberFrom(record, TOKEN_FIELDS.input),
@@ -453,6 +472,7 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
   const models = new Map();
   const sessions = new Set();
   const modelBySession = new Map();
+  const sessionDetails = new Map();
   let limits = null;
   let limitsAt = null;
   let todayTokens = 0;
@@ -480,6 +500,17 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
       }
       const usage = tokenUsageFrom(record);
       const total = usage.total;
+      const observedAt = recordDate(record) || new Date();
+      const contextWindow = numberFrom(record, CONTEXT_WINDOW_FIELDS);
+      const contextTokens = sessionContextTokens(record, usage);
+      const detail = sessionDetails.get(currentSession) || { id: currentSession, model: null, title: null, contextWindow: 0, contextTokens: 0, updatedAt: null };
+      const title = sessionTitleFrom(record);
+      if (title) detail.title = title;
+      if (recordModel) detail.model = recordModel;
+      if (contextWindow > detail.contextWindow) detail.contextWindow = contextWindow;
+      if (contextTokens > detail.contextTokens) detail.contextTokens = contextTokens;
+      if (!detail.updatedAt || observedAt >= new Date(detail.updatedAt)) detail.updatedAt = observedAt.toISOString();
+      sessionDetails.set(currentSession, detail);
       if (!total) continue;
 
       let fileDate = new Date();
@@ -506,6 +537,14 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
   });
   const modelTotal = Array.from(models.values()).reduce((sum, value) => sum + value, 0);
   const colors = ['teal', 'blue', 'amber'];
+  const sessionWindows = Array.from(sessionDetails.values()).map(session => {
+    const contextWindow = session.contextWindow || 0;
+    const contextTokens = Math.min(session.contextTokens || 0, contextWindow || Number.MAX_SAFE_INTEGER);
+    const remainingTokens = contextWindow ? Math.max(0, contextWindow - contextTokens) : null;
+    const usedPercent = contextWindow ? Math.round(contextTokens / contextWindow * 100) : null;
+    const id = String(session.id);
+    return { id, shortId: id.slice(0, 8), title: session.title || `Session ${id.slice(0, 8)}`, model: session.model || modelBySession.get(session.id) || null, contextWindow: contextWindow || null, contextTokens: contextWindow ? contextTokens : null, remainingTokens, usedPercent, updatedAt: session.updatedAt, needsAttention: Boolean(contextWindow && usedPercent >= 90 && remainingTokens <= 16000) };
+  }).sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)).slice(0, 20);
   return {
     todayTokens,
     monthTokens,
@@ -521,6 +560,7 @@ function usageFromPath(sourceName, targetPath, budgetTokens) {
       tokens: value,
       color: colors[index % colors.length]
     })),
+    sessionWindows,
     limits: limits ? { ...limits, updatedAt: limitsAt ? limitsAt.toISOString() : null } : null
   };
 }
@@ -576,6 +616,17 @@ function getLocalUsage() {
       }
     }
   }
+  for (const [provider, usage] of [['codex', codex], ['claude-code', claude]]) {
+    for (const session of usage.sessionWindows.filter(item => item.needsAttention)) {
+      recordEvent({
+        id: `session-window-${provider}-${session.id}-${dateKey(new Date())}`,
+        tab: 'usage', level: 'warning', source: provider, eventType: 'session_window_near_limit',
+        message: `${provider === 'codex' ? 'Codex' : 'Claude Code'} session "${session.title}" is at ${session.usedPercent}% of its observed context window (${Math.round(session.remainingTokens / 1000)}K tokens left).`,
+        details: { sessionId: session.shortId, sessionTitle: session.title, model: session.model, usedPercent: session.usedPercent, remainingTokens: session.remainingTokens, contextWindow: session.contextWindow },
+        status: 'open', ruleId: 'SESSION-WINDOW-90-16K'
+      });
+    }
+  }
   return {
     codex,
     claude,
@@ -584,6 +635,7 @@ function getLocalUsage() {
     dailyDates,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'local',
     models,
+    sessionWindows: [...codex.sessionWindows.map(session => ({ ...session, provider: 'Codex' })), ...claude.sessionWindows.map(session => ({ ...session, provider: 'Claude Code' }))].sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)),
     fetchedAt: new Date().toISOString()
   };
 }

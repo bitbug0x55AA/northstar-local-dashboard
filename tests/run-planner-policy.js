@@ -38,4 +38,8 @@ assert.throws(() => applyOperations([{ type: 'create_task', title: 'Needs confir
 const manual = validateOperations([{ type: 'log_progress', content: 'Manual note' }], { source: 'manual' });
 assert.equal(manual.operations[0].source, 'manual');
 
+const performanceGoal = validateOperations([{ type: 'create_performance_goal', title: 'Local performance goal', weight: 40, successCriteria: 'Objective result' }], { source: 'manual' });
+assert.equal(performanceGoal.operations[0].weight, 40);
+assert.throws(() => validateProposal({ operations: [{ type: 'create_performance_goal', title: 'Do not send to model', weight: 10 }] }), /cannot process performance-management records/);
+
 console.log('Planner policy checks passed');

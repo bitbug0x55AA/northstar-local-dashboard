@@ -11,7 +11,13 @@
     "update_task": ["id", "title", "notes", "status", "priority", "dueAt", "projectId", "source", "sourceRef", "category", "tags", "parentId"],
     "delete_task": ["id"],
     "create_category": ["name"],
-    "delete_category": ["name"]
+    "delete_category": ["name"],
+    "create_performance_goal": ["title", "weight", "successCriteria", "dueAt"],
+    "create_performance_control": ["goalId", "title", "frequency", "dueAt", "status"],
+    "create_performance_initiative": ["goalId", "title", "status", "dueAt", "progress", "baseline", "targetOutcome", "metricAfter"],
+    "create_performance_evidence": ["goalId", "controlId", "initiativeId", "occurredAt", "contribution", "outcome", "metricBefore", "metricAfter", "evidenceType", "evidenceRef", "confidentiality"],
+    "create_performance_checkpoint": ["title", "dueAt", "status", "requiredOutput"],
+    "update_performance_record": ["recordType", "id", "title", "status", "dueAt", "weight", "progress", "successCriteria", "frequency", "baseline", "targetOutcome", "metricAfter", "contribution", "outcome", "metricBefore", "metricAfter", "evidenceType", "evidenceRef", "confidentiality", "requiredOutput"]
   },
   "allowedStatuses": ["planned", "in-progress", "done", "cancelled"],
   "allowedPriorities": ["low", "medium", "high"],
