@@ -41,12 +41,23 @@ assert.equal(manual.operations[0].source, 'manual');
 const performanceGoal = validateOperations([{ type: 'create_performance_goal', title: 'Local performance goal', weight: 40, successCriteria: 'Objective result' }], { source: 'manual' });
 assert.equal(performanceGoal.operations[0].weight, 40);
 assert.throws(() => validateProposal({ operations: [{ type: 'create_performance_goal', title: 'Do not send to model', weight: 10 }] }), /cannot process performance-management records/);
+const monthlyPerformanceReview = validateOperations([{
+  type: 'create_performance_monthly_review', month: '2026-08-01', kriResult: 100, ttcCorrections: 0,
+  sirComplete: 'yes', queueHealthy: 'yes', workTimely: 'yes', rasMet: 'yes', overdueCount: 0, materialMiss: 'no'
+}], { source: 'manual' }).operations[0];
+assert.equal(monthlyPerformanceReview.kriResult, 100);
+assert.equal(monthlyPerformanceReview.rasMet, 'yes');
+const exerciseActivity = validateOperations([{
+  type: 'create_performance_activity', activityType: 'purple-team', title: 'August exercise', status: 'in-progress', externalCollaboration: 'yes'
+}], { source: 'manual' }).operations[0];
+assert.equal(exerciseActivity.activityType, 'purple-team');
+assert.throws(() => validateOperations([{ type: 'create_performance_monthly_review', month: '2026-08-01', kriResult: 101 }], { source: 'manual' }), /KRI result/);
 
 const unilateralStrength = validateOperations([{
   type: 'log_fitness_session', plan: 'strength', session: 'A', performedAt: '2026-08-09T10:00:00.000Z',
-  durationMinutes: 45, exercises: [{ exerciseName: '单腿 Bench 臀推', sets: 3, setsArePerSide: true, reps: 10, loadKg: 20 }], rpe: 8, quality: 4, notes: ''
+  durationMinutes: 45, exercises: [{ exerciseName: 'Single-leg press', sets: 3, setsArePerSide: true, reps: 10, loadKg: 20 }], rpe: 8, quality: 4, notes: ''
 }], { source: 'manual' }).operations[0];
-assert.equal(unilateralStrength.exercises[0].exerciseName, '单腿 Bench 臀推');
+assert.equal(unilateralStrength.exercises[0].exerciseName, 'Single-leg press');
 assert.equal(unilateralStrength.exercises[0].sets, 3);
 assert.equal(unilateralStrength.exercises[0].reps, 10);
 assert.equal(unilateralStrength.exercises[0].setsArePerSide, true);

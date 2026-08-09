@@ -46,17 +46,18 @@ test('observability UI has a bilingual rendering contract', () => {
 test('every rendered button has an explicit interaction contract', () => {
   const buttonTags = sources.flatMap(source => source.content.match(/<button\b[^>]*>/g) || []);
   assert.ok(buttonTags.length >= 30, 'expected the full dashboard button surface to be scanned');
-  const handledDataAttributes = ['data-view', 'data-github-subview', 'data-github-view', 'data-go', 'data-planner-tab', 'data-planner-sidepage', 'data-obs-tab', 'data-fitness-log', 'data-mode'];
+  const handledDataAttributes = ['data-view', 'data-github-subview', 'data-github-view', 'data-go', 'data-planner-tab', 'data-planner-sidepage', 'data-performance-view', 'data-performance-action', 'data-delete-category', 'data-delete-plan', 'data-delete-target', 'data-obs-tab', 'data-fitness-log', 'data-mode'];
   const handledClasses = ['ci-check', 'planner-complete', 'planner-edit', 'planner-delete', 'planner-remove-category', 'obs-action', 'fitness-close', 'fitness-profile-save', 'fitness-weight-log', 'fitness-review-button', 'fitness-edit', 'fitness-delete', 'fitness-exercise-add', 'fitness-exercise-remove', 'security-edit-milestone', 'weekly-edit-event'];
 
   for (const button of buttonTags) {
     const id = button.match(/\bid=["']([^"']+)["']/)?.[1];
     const hasHandledDataAttribute = handledDataAttributes.some(attribute => button.includes(attribute));
+    const hasFormSubmitContract = button.includes('type="submit"');
     const hasHandledClass = handledClasses.some(className => new RegExp(`\\b${className}\\b`).test(button));
     const hasRegisteredIdHandler = id && (
       combined.includes(`#${id}`) || combined.includes(`id==='${id}'`) || combined.includes(`id === '${id}'`)
     );
-    assert.ok(hasHandledDataAttribute || hasHandledClass || hasRegisteredIdHandler, `dead button contract: ${button}`);
+    assert.ok(hasHandledDataAttribute || hasFormSubmitContract || hasHandledClass || hasRegisteredIdHandler, `dead button contract: ${button}`);
   }
   assert.match(combined, /#avatarButton[\s\S]*addEventListener\('click'/, 'the avatar button must navigate instead of being inert');
   const mergeOrchestrator = sources.find(source => source.name === 'merge-orchestrator.js').content;

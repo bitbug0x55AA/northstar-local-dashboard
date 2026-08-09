@@ -30,6 +30,19 @@ function normalizedSource(value, fallback) {
   return value === 'llm' ? 'llm' : fallback;
 }
 
+function normalizedChoice(value, label, choices, fallback = null) {
+  const text = asText(value).toLowerCase();
+  if (!text) return fallback;
+  if (!choices.includes(text)) throw new Error(`${label} is invalid`);
+  return text;
+}
+
+function normalizedCount(value, label) {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number) || number < 0) throw new Error(`${label} must be zero or greater`);
+  return number;
+}
+
 function normalizeFitnessExercises(value) {
   if (!Array.isArray(value) || value.length < 1 || value.length > 20) throw new Error('Fitness exercises must contain between 1 and 20 items');
   return value.map((exercise, index) => {
@@ -49,8 +62,7 @@ function normalizeFitnessSession(output, { includeId = false } = {}) {
   if (includeId) output.id = boundedText(output.id, 'Fitness session id', true);
   output.plan = boundedText(output.plan, 'Fitness plan', true, 40);
   if (output.plan !== 'strength') throw new Error('Fitness plan is invalid');
-  output.session = boundedText(output.session, 'Fitness session', true, 10);
-  if (!['A', 'B', 'C'].includes(output.session)) throw new Error('Fitness session must be A, B, or C');
+  output.session = boundedText(output.session, 'Fitness session', true, 80);
   output.performedAt = normalizeDate(output.performedAt, 'Fitness performedAt') || new Date().toISOString();
   output.exercises = normalizeFitnessExercises(output.exercises);
   for (const field of ['durationMinutes', 'rpe', 'quality', 'soreness24', 'soreness48']) {
@@ -133,8 +145,24 @@ function normalizeOperation(input, source) {
     if (!['title', 'notes', 'status', 'priority', 'dueAt', 'projectId', 'category', 'tags', 'parentId'].some(key => key in output)) throw new Error('Task update has no editable fields');
   } else if (type === 'delete_task') {
     output.id = boundedText(output.id, 'Task id', true);
-  } else if (type === 'create_category' || type === 'delete_category') {
+  } else if (type === 'create_category' || type === 'update_category' || type === 'delete_category') {
+    if (type === 'update_category') output.oldName = boundedText(output.oldName, 'Existing category name', true, 80);
     output.name = boundedText(output.name, 'Category name', true, 80);
+    if (output.labelEn !== undefined) output.labelEn = boundedText(output.labelEn, 'English category label', false, 80);
+    if (output.module !== undefined) output.module = normalizedChoice(output.module, 'Category module', ['none', 'roadmap', 'github', 'performance', 'fitness']);
+  } else if (['create_fitness_plan', 'update_fitness_plan', 'delete_fitness_plan'].includes(type)) {
+    if (type !== 'create_fitness_plan') output.id = boundedText(output.id, 'Fitness plan id', true);
+    if (type !== 'delete_fitness_plan') {
+      output.name = boundedText(output.name, 'Fitness plan name', true, 120);
+      for (const field of ['labelEn', 'focus', 'focusEn']) output[field] = boundedText(output[field], `Fitness plan ${field}`, false, 500);
+    }
+  } else if (['create_performance_target', 'update_performance_target', 'delete_performance_target'].includes(type)) {
+    if (type !== 'create_performance_target') output.id = boundedText(output.id, 'Performance target id', true);
+    if (type !== 'delete_performance_target') {
+      output.name = boundedText(output.name, 'Performance target name', true, 120);
+      output.labelEn = boundedText(output.labelEn, 'Performance target English label', false, 120);
+      output.target = normalizedCount(output.target, 'Performance target');
+    }
   } else if (type === 'create_performance_goal') {
     output.title = boundedText(output.title, 'Performance goal title', true, 160);
     output.weight = Number(output.weight);
@@ -147,6 +175,9 @@ function normalizeOperation(input, source) {
     output.frequency = boundedText(output.frequency, 'Control frequency', false, 80);
     output.dueAt = normalizeDate(output.dueAt, 'Control dueAt');
     output.status = ['not-assessed', 'compliant', 'watch', 'exception'].includes(output.status) ? output.status : 'not-assessed';
+    output.reviewer = boundedText(output.reviewer, 'Control reviewer', false, 160);
+    output.lastTestedAt = normalizeDate(output.lastTestedAt, 'Control lastTestedAt');
+    output.evidenceRef = boundedText(output.evidenceRef, 'Control evidenceRef', false, 500);
   } else if (type === 'create_performance_initiative') {
     output.goalId = boundedText(output.goalId, 'Initiative goal id', true);
     output.title = boundedText(output.title, 'Initiative title', true, 160);
@@ -154,25 +185,64 @@ function normalizeOperation(input, source) {
     output.dueAt = normalizeDate(output.dueAt, 'Initiative dueAt');
     output.progress = Number(output.progress);
     if (!Number.isFinite(output.progress) || output.progress < 0 || output.progress > 100) throw new Error('Initiative progress must be between 0 and 100');
-    for (const field of ['baseline', 'targetOutcome', 'metricAfter']) output[field] = boundedText(output[field], `Initiative ${field}`, false, 1000);
+    for (const field of ['baseline', 'targetOutcome', 'metricAfter', 'roleScope', 'ipClassification']) output[field] = boundedText(output[field], `Initiative ${field}`, false, 1000);
+    output.productionApproved = normalizedChoice(output.productionApproved, 'Initiative productionApproved', ['yes', 'no', 'n/a'], 'no');
+    output.adoptedBeyondTeam = normalizedChoice(output.adoptedBeyondTeam, 'Initiative adoptedBeyondTeam', ['yes', 'no', 'n/a'], 'no');
+    output.evidenceRef = boundedText(output.evidenceRef, 'Initiative evidenceRef', false, 500);
   } else if (type === 'create_performance_evidence') {
     for (const field of ['goalId', 'controlId', 'initiativeId']) output[field] = boundedText(output[field], `Evidence ${field}`);
     output.occurredAt = normalizeDate(output.occurredAt, 'Evidence occurredAt');
-    for (const field of ['contribution', 'outcome', 'metricBefore', 'metricAfter', 'evidenceType', 'evidenceRef', 'confidentiality']) output[field] = boundedText(output[field], `Evidence ${field}`, field === 'contribution' || field === 'outcome' || field === 'evidenceRef', field === 'evidenceRef' ? 500 : 1000);
+    for (const field of ['contribution', 'outcome', 'metricBefore', 'metricAfter', 'measurementMethod', 'evidenceType', 'evidenceRef', 'confidentiality', 'stakeholder', 'reviewer']) output[field] = boundedText(output[field], `Evidence ${field}`, field === 'contribution' || field === 'outcome' || field === 'evidenceRef', field === 'evidenceRef' ? 500 : 1000);
+    output.productionUse = normalizedChoice(output.productionUse, 'Evidence productionUse', ['yes', 'no', 'n/a'], 'no');
+    output.crossTeamImpact = normalizedChoice(output.crossTeamImpact, 'Evidence crossTeamImpact', ['yes', 'no', 'n/a'], 'no');
+    output.reviewedAt = normalizeDate(output.reviewedAt, 'Evidence reviewedAt');
   } else if (type === 'create_performance_checkpoint') {
     output.title = boundedText(output.title, 'Checkpoint title', true, 160);
     output.dueAt = normalizeDate(output.dueAt, 'Checkpoint dueAt', true);
     output.status = POLICY.allowedStatuses.includes(output.status) ? output.status : 'planned';
     output.requiredOutput = boundedText(output.requiredOutput, 'Checkpoint required output', false, 1000);
+    output.completedAt = normalizeDate(output.completedAt, 'Checkpoint completedAt');
+    output.evidenceRef = boundedText(output.evidenceRef, 'Checkpoint evidenceRef', false, 500);
+  } else if (type === 'create_performance_monthly_review') {
+    output.month = normalizeDate(output.month, 'Monthly review month', true);
+    output.kriResult = Number(output.kriResult);
+    if (!Number.isFinite(output.kriResult) || output.kriResult < 0 || output.kriResult > 100) throw new Error('Monthly review KRI result must be between 0 and 100');
+    output.ttcCorrections = normalizedCount(output.ttcCorrections, 'Monthly review TTC corrections');
+    output.overdueCount = normalizedCount(output.overdueCount, 'Monthly review overdue count');
+    for (const field of ['sirComplete', 'queueHealthy', 'workTimely', 'rasMet', 'materialMiss']) output[field] = normalizedChoice(output[field], `Monthly review ${field}`, ['yes', 'no', 'n/a'], 'n/a');
+    output.evidenceRef = boundedText(output.evidenceRef, 'Monthly review evidenceRef', false, 500);
+    output.reviewer = boundedText(output.reviewer, 'Monthly review reviewer', false, 160);
+    output.reviewedAt = normalizeDate(output.reviewedAt, 'Monthly review reviewedAt');
+  } else if (type === 'create_performance_activity') {
+    output.goalId = boundedText(output.goalId, 'Activity goal id');
+    output.activityType = boundedText(output.activityType, 'Activity type', true, 80);
+    output.title = boundedText(output.title, 'Activity title', true, 160);
+    output.occurredAt = normalizeDate(output.occurredAt, 'Activity occurredAt');
+    output.role = boundedText(output.role, 'Activity role', false, 160);
+    output.requiredOutcome = boundedText(output.requiredOutcome, 'Activity required outcome', false, 1000);
+    output.ownedAction = boundedText(output.ownedAction, 'Activity owned action', false, 1000);
+    output.dueAt = normalizeDate(output.dueAt, 'Activity dueAt');
+    output.status = POLICY.allowedStatuses.includes(output.status) ? output.status : 'planned';
+    output.externalCollaboration = normalizedChoice(output.externalCollaboration, 'Activity externalCollaboration', ['yes', 'no', 'n/a'], 'no');
+    output.evidenceRef = boundedText(output.evidenceRef, 'Activity evidenceRef', false, 500);
+  } else if (type === 'create_performance_promotion') {
+    output.capability = boundedText(output.capability, 'Promotion capability', true, 160);
+    for (const field of ['currentEvidence', 'evidenceRef', 'managerAssessment', 'gapAction']) output[field] = boundedText(output[field], `Promotion ${field}`, false, field === 'evidenceRef' ? 500 : 1000);
+    output.dueAt = normalizeDate(output.dueAt, 'Promotion dueAt');
+    output.status = POLICY.allowedStatuses.includes(output.status) ? output.status : 'planned';
   } else if (type === 'update_performance_record') {
     output.recordType = boundedText(output.recordType, 'Performance record type', true, 40);
-    if (!['goal', 'control', 'initiative', 'evidence', 'checkpoint'].includes(output.recordType)) throw new Error('Performance record type is invalid');
+    if (!['goal', 'control', 'initiative', 'evidence', 'checkpoint', 'monthlyReview', 'activity', 'promotion'].includes(output.recordType)) throw new Error('Performance record type is invalid');
     output.id = boundedText(output.id, 'Performance record id', true);
     for (const field of ['title', 'successCriteria', 'frequency', 'baseline', 'targetOutcome', 'metricAfter', 'contribution', 'outcome', 'metricBefore', 'metricAfter', 'evidenceType', 'evidenceRef', 'confidentiality', 'requiredOutput']) if (output[field] !== undefined) output[field] = boundedText(output[field], `Performance ${field}`, false, field === 'evidenceRef' ? 500 : 1000);
     if (output.status !== undefined && ![...POLICY.allowedStatuses, 'not-assessed', 'compliant', 'watch', 'exception'].includes(output.status)) throw new Error('Performance status is invalid');
     if (output.dueAt !== undefined) output.dueAt = normalizeDate(output.dueAt, 'Performance dueAt');
     for (const field of ['weight', 'progress']) if (output[field] !== undefined && (!Number.isFinite(Number(output[field])) || Number(output[field]) < 0 || Number(output[field]) > 100)) throw new Error(`Performance ${field} must be between 0 and 100`);
     if (!Object.keys(output).some(key => !['type', 'recordType', 'id', 'source'].includes(key))) throw new Error('Performance update has no editable fields');
+  } else if (type === 'delete_performance_record') {
+    output.recordType = boundedText(output.recordType, 'Performance record type', true, 40);
+    if (!['goal', 'control', 'initiative', 'evidence', 'checkpoint', 'monthlyReview', 'activity', 'promotion'].includes(output.recordType)) throw new Error('Performance record type is invalid');
+    output.id = boundedText(output.id, 'Performance record id', true);
   } else if (type === 'log_fitness_session') {
     normalizeFitnessSession(output);
   } else if (type === 'update_fitness_session') {

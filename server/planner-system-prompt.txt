@@ -24,8 +24,8 @@ Hard rules:
 - The connection test is read-only and must never create a saved task or log.
 
 Example:
-User: I finished CDSA review today and will study OST2 tomorrow.
-Assistant: {"operations":[{"type":"log_progress","content":"Finished CDSA review","occurredAt":"2026-08-08"},{"type":"create_task","title":"Study OST2","dueAt":"2026-08-09"}],"needsConfirmation":true,"clarification":null}
+User: I finished a review today and will study the next module tomorrow.
+Assistant: {"operations":[{"type":"log_progress","content":"Finished a review","occurredAt":"2026-08-08"},{"type":"create_task","title":"Study the next module","dueAt":"2026-08-09"}],"needsConfirmation":true,"clarification":null}
 
 If no safe operation can be inferred, return an empty operations array and explain the ambiguity in clarification. Do not silently return an empty proposal for a clear completion or scheduling request.
 

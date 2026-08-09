@@ -6,22 +6,23 @@
   if (!nav || !view || !sideNav) return;
 
   const state = {
-    data: { goals: [], projects: [], tasks: [], events: [], milestones: [], progressLogs: [], categories: shared.DEFAULT_CATEGORIES, performance: { goals: [], controls: [], initiatives: [], evidence: [], checkpoints: [] } },
-    activePage: 'overview', editingTaskId: null, editingMilestoneId: null, editingEventId: null, draftCategory: null, draftProjectId: null, githubPlannerProjectId: localStorage.getItem('northstar.plannerGithubProject'), fitnessMode: null, fitnessSession: null, fitnessReview: null,
+    data: { goals: [], projects: [], tasks: [], events: [], milestones: [], progressLogs: [], categories: [], settings: { categoryLabels: [], modules: {} }, fitness: { plans: [] }, performance: { goals: [], controls: [], initiatives: [], evidence: [], checkpoints: [], monthlyReviews: [], activities: [], promotion: [], targets: [] } },
+    activePage: 'overview', performanceView: 'overview', editingTaskId: null, editingMilestoneId: null, editingEventId: null, draftCategory: null, draftProjectId: null, githubPlannerProjectId: localStorage.getItem('northstar.plannerGithubProject'), fitnessMode: null, fitnessSession: null, fitnessReview: null,
     llm: { configured: false, tested: false, ok: false, testing: false, model: null, latencyMs: null, error: null }
   };
   const storageKey = 'northstar.plannerSubpage';
-  const categories = () => [...new Set([...shared.DEFAULT_CATEGORIES, ...(state.data.categories || []), ...state.data.tasks.map(task => task.category).filter(Boolean)])];
+  const categories = () => [...new Set([...(state.data.categories || []), ...state.data.tasks.map(task => task.category).filter(Boolean)])];
   const tasksFor = category => (category ? state.data.tasks.filter(task => task.category === category && task.status !== 'cancelled') : state.data.tasks.filter(task => task.status !== 'cancelled'));
   const navigation = window.NorthstarPlannerNavigation.createNavigation(nav, sideNav, () => state, categories, tasksFor);
 
   async function apply(operations, confirmed = false) { const result = await shared.request('/api/planner/operations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operations, confirmed }) }); state.data = result.data; render(); }
   function showError(message) { const preview = document.querySelector('#plannerPreview'); if (preview) preview.innerHTML = `<div class="error-note">${shared.tr('操作失败：', 'Operation failed: ')}${shared.escapeHtml(message)}</div>`; }
-  function pageContent() { const category = shared.categoryFromPage(state.activePage); if (state.activePage === 'overview') return window.NorthstarPlannerTasks.renderOverview(state.data, state, categories(), tasksFor); if (state.activePage === 'weekly') return window.NorthstarPlannerWeekly.render(state.data, state); if (state.activePage === 'add') return `<div class="planner-grid planner-input-grid">${window.NorthstarPlannerTasks.renderAddPage(state.data, state, categories())}${window.NorthstarPlannerLlm.render(state.llm)}</div>`; if (category === window.NorthstarPlannerSecurity.CATEGORY) return window.NorthstarPlannerSecurity.render(state.data, state, tasksFor); if (category === window.NorthstarPlannerGithubProjects.CATEGORY) return window.NorthstarPlannerGithubProjects.render(state.data, state); if (category === shared.WORK_PERFORMANCE_CATEGORY) return window.NorthstarPlannerPerformance.render(state.data); if (category === '个人健身') return window.NorthstarPlannerFitness.render(state.data, state); return window.NorthstarPlannerTasks.renderCategory(category, tasksFor); }
+  function pageContent() { const category = shared.categoryFromPage(state.activePage); const modules = state.data.settings?.modules || {}; if (state.activePage === 'overview') return window.NorthstarPlannerTasks.renderOverview(state.data, state, categories(), tasksFor); if (state.activePage === 'weekly') return window.NorthstarPlannerWeekly.render(state.data, state); if (state.activePage === 'add') return `<div class="planner-grid planner-input-grid">${window.NorthstarPlannerTasks.renderAddPage(state.data, state, categories())}${window.NorthstarPlannerLlm.render(state.llm)}</div>`; if (state.activePage === 'settings') return window.NorthstarPlannerSettings.render(state.data, state); if (category === modules.roadmap) return window.NorthstarPlannerSecurity.render(state.data, state, tasksFor, category); if (category === modules.github) return window.NorthstarPlannerGithubProjects.render(state.data, state); if (category === modules.performance) return window.NorthstarPlannerPerformance.render(state.data, state); if (category === modules.fitness) return window.NorthstarPlannerFitness.render(state.data, state); return window.NorthstarPlannerTasks.renderCategory(category, tasksFor); }
   function render() {
     state.render = render;
+    shared.setData(state.data);
     const currentCategory = shared.categoryFromPage(state.activePage);
-    if (!['overview', 'weekly', 'add'].includes(state.activePage) && !categories().includes(currentCategory)) state.activePage = 'overview';
+    if (!['overview', 'weekly', 'add', 'settings'].includes(state.activePage) && !categories().includes(currentCategory)) state.activePage = 'overview';
     localStorage.setItem(storageKey, state.activePage);
     navigation.render();
     const githubCount = state.data.tasks.filter(task => task.source === 'github').length;
@@ -30,12 +31,13 @@
     window.NorthstarPlannerWeekly.bind(state, apply, render, showError);
     window.NorthstarPlannerSecurity.bind(state, apply, render, showError);
     window.NorthstarPlannerGithubProjects.bind(state, render);
-    window.NorthstarPlannerPerformance.bind(apply, showError);
+    window.NorthstarPlannerPerformance.bind(apply, showError, state);
     window.NorthstarPlannerFitness.bind(state, apply, showError);
+    window.NorthstarPlannerSettings.bind(state, apply, render, showError);
     window.NorthstarPlannerLlm.bind(state.llm, apply, showError);
   }
   function keepNavigationLabel() { const label = shared.tr('个人计划', 'Personal Planner'); if (nav.lastChild) nav.lastChild.textContent = label; const title = document.querySelector('#pageTitle'); if (title && view.classList.contains('active-view')) title.textContent = label; }
-  async function load() { try { state.data = await shared.request('/api/planner'); render(); } catch (error) { view.innerHTML = `<div class="panel error-note">${shared.tr('Planner 无法加载：', 'Planner could not load: ')}${shared.escapeHtml(error.message)}</div>`; } }
+  async function load() { try { state.data = await shared.request('/api/planner'); shared.setData(state.data); render(); } catch (error) { view.innerHTML = `<div class="panel error-note">${shared.tr('Planner 无法加载：', 'Planner could not load: ')}${shared.escapeHtml(error.message)}</div>`; } }
   async function initialize() {
     try {
       const status = await shared.request('/api/planner/status');

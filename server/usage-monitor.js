@@ -88,7 +88,7 @@ function codexAdapter(record) {
     requestId: valueAt(record, ['request_id', 'requestId', 'call_id', 'callId', 'payload.request_id', 'payload.id']),
     model: valueAt(record, ['model', 'modelName', 'payload.model', 'payload.thread_settings.model', 'payload.collaboration_mode.settings.model']),
     contextTokens: numberAt(record, ['context_tokens', 'contextTokens', 'payload.info.context_tokens', 'payload.info.last_token_usage.context_tokens']),
-    contextWindow: numberAt(record, ['context_window', 'contextWindow', 'payload.info.context_window']),
+    contextWindow: numberAt(record, ['context_window', 'contextWindow', 'model_context_window', 'modelContextWindow', 'payload.info.context_window', 'payload.info.model_context_window', 'payload.info.modelContextWindow']),
     limits: normalizeLimitSnapshot(record)
   };
 }

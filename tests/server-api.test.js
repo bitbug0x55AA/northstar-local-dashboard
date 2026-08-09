@@ -138,7 +138,20 @@ test('planner API is enabled but requires explicit confirmation for LLM changes'
   assert.equal(saved.status, 200);
   const planner = await request('GET', '/api/planner');
   assert.equal(planner.body.tasks.length, 1);
-  assert.ok(planner.body.milestones.length >= 20, 'roadmap defaults must migrate into editable Planner data');
+  assert.equal(planner.body.milestones.length, 0, 'a new Planner must not inject personal roadmap data');
+
+  const categoryCreated = await request('POST', '/api/planner/operations', { operations: [{ type: 'create_category', name: 'My roadmap', labelEn: 'My roadmap', module: 'roadmap' }] }, { Origin: localOrigin });
+  assert.equal(categoryCreated.body.data.settings.modules.roadmap, 'My roadmap');
+  const categoryUpdated = await request('POST', '/api/planner/operations', { operations: [{ type: 'update_category', oldName: 'My roadmap', name: 'Primary roadmap', labelEn: 'Primary roadmap', module: 'roadmap' }] }, { Origin: localOrigin });
+  assert.equal(categoryUpdated.body.data.settings.modules.roadmap, 'Primary roadmap');
+  const planCreated = await request('POST', '/api/planner/operations', { operations: [{ type: 'create_fitness_plan', name: 'Session one', labelEn: 'Session one', focus: 'Local plan' }] }, { Origin: localOrigin });
+  const planId = planCreated.body.results[0].item.id;
+  assert.equal((await request('POST', '/api/planner/operations', { operations: [{ type: 'update_fitness_plan', id: planId, name: 'Session 1', labelEn: 'Session 1', focus: 'Updated local plan' }] }, { Origin: localOrigin })).status, 200);
+  assert.equal((await request('POST', '/api/planner/operations', { operations: [{ type: 'delete_fitness_plan', id: planId }] }, { Origin: localOrigin })).status, 200);
+  const targetCreated = await request('POST', '/api/planner/operations', { operations: [{ type: 'create_performance_target', name: 'Exercise', labelEn: 'Exercise', target: 3 }] }, { Origin: localOrigin });
+  const targetId = targetCreated.body.results[0].item.id;
+  assert.equal((await request('POST', '/api/planner/operations', { operations: [{ type: 'update_performance_target', id: targetId, name: 'Exercise', labelEn: 'Exercise', target: 4 }] }, { Origin: localOrigin })).body.results[0].item.target, 4);
+  assert.equal((await request('POST', '/api/planner/operations', { operations: [{ type: 'delete_performance_target', id: targetId }] }, { Origin: localOrigin })).status, 200);
 
   const milestoneCreated = await request('POST', '/api/planner/operations', { operations: [{ type: 'create_milestone', domain: 'security', milestoneType: 'certification', title: 'Editable certification', year: '2029', period: 'Q1', status: 'in-progress', progress: 30 }] }, { Origin: localOrigin });
   assert.equal(milestoneCreated.status, 200);

@@ -5,7 +5,8 @@ const path = require('path');
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'northstar-planner-sync-'));
 process.env.NORTHSTAR_PLANNER_DIR = tempDir;
-const { readPlanner, syncGithubToPlanner } = require('../server/planner-store');
+const { readPlanner, applyOperations, syncGithubToPlanner } = require('../server/planner-store');
+applyOperations([{ type: 'create_category', name: 'Open source work', labelEn: 'Open source work', module: 'github' }]);
 
 const github = {
   repos: [{
@@ -22,7 +23,7 @@ assert.equal(first.data.projects[0].sourceRef, 'github:signal-console');
 assert.equal(first.data.tasks[0].sourceRef, 'github:signal-console#241');
 assert.equal(first.data.tasks[0].status, 'in-progress');
 assert.equal(first.data.tasks[0].projectId, first.data.projects[0].id);
-assert.equal(first.data.tasks[0].category, 'GitHub 开源项目');
+assert.equal(first.data.tasks[0].category, 'Open source work');
 
 const polished = syncGithubToPlanner({
   repos: [{
@@ -40,7 +41,7 @@ const polished = syncGithubToPlanner({
 assert.equal(polished.data.tasks[0].title, '#241 建立可执行的键盘快捷键方案');
 assert.equal(polished.data.tasks[0].notes, '整理命令面板快捷键并完成验证。');
 assert.equal(polished.data.tasks[0].sourcePolishVersion, 'github-polish-v3');
-assert.equal(polished.data.tasks[0].category, 'GitHub 开源项目');
+assert.equal(polished.data.tasks[0].category, 'Open source work');
 
 const second = syncGithubToPlanner(github);
 assert.equal(second.results.created, 0);

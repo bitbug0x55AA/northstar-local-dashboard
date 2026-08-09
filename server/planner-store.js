@@ -10,55 +10,43 @@ const DEFAULT_DIR = process.platform === 'win32' && HOME
 const DATA_DIR = process.env.NORTHSTAR_PLANNER_DIR || DEFAULT_DIR;
 const DATA_FILE = path.join(DATA_DIR, 'planner-data.json');
 const BACKUP_FILE = path.join(DATA_DIR, 'planner-data.json.bak');
-const GITHUB_CATEGORY = 'GitHub 开源项目';
-
-function defaultMilestones() {
-  const security = [
-    ['security-2025-cti', '2025', '10月', 'MAD20 Cyber Threat Intelligence', 'certification', 'done', 100],
-    ['security-2025-ejpt', '2025', '10–12月', 'eJPT Learning Path', 'certification', 'done', 100],
-    ['security-2025-soc', '2025', '12月', 'MAD20 SOC Assessment', 'certification', 'done', 100],
-    ['security-2026-btl1', '2026', '1月', 'BTL1', 'certification', 'done', 100],
-    ['security-2026-cdsa', '2026', '2–4月', 'HTB CDSA', 'certification', 'done', 100],
-    ['security-2026-adversary', '2026', '上半年', 'MAD20 Adversary Emulation Methodology', 'course', 'done', 100],
-    ['security-2026-memory', '2026', '上半年', '13Cubed Windows Memory Analysis', 'course', 'done', 100],
-    ['security-2026-hunting', '2026', '5月', 'MAD20 Threat Hunting & Detection Engineering', 'course', 'done', 100],
-    ['security-2026-purple', '2026', '7–12月', 'MAD20 Purple Teaming Methodology', 'course', 'done', 100],
-    ['security-2026-assembly', '2026', '7–12月', 'OpenSecurityTraining2 Architect 1001: x86-64 Assembly', 'course', 'in-progress', 0],
-    ['security-2026-pmrp', '2026', '7–12月', 'TCM Practical Malware Research Professional', 'certification', 'in-progress', 0],
-    ['security-2026-ccfh', '2026', '7–12月', 'CrowdStrike CCFH', 'certification', 'in-progress', 0],
-    ['security-2027-arcx', '2027', '1–3月', 'arcX Cyber Threat Intelligence Practitioner', 'certification', 'planned', 0],
-    ['security-2027-cptia', '2027', '1–3月', 'CREST CPTIA', 'certification', 'planned', 0],
-    ['security-2027-crtp', '2027', '4–6月', 'CRTP', 'certification', 'planned', 0],
-    ['security-2027-mscloud', '2027', '8–9月', 'Pwned Labs Microsoft Cloud Attack & Defense Bootcamp', 'course', 'planned', 0],
-    ['security-2027-crto', '2027', '10–12月', 'CRTO', 'certification', 'planned', 0],
-    ['security-2028-xintra', '2028', '1–2月', 'XINTRA Azure / M365', 'course', 'planned', 0],
-    ['security-2028-aws', '2028', '3月', 'Pwned Labs Amazon Cloud Attack & Defense Bootcamp', 'course', 'planned', 0],
-    ['security-2028-oscp', '2028', '8–10月', 'OSCP', 'certification', 'planned', 0],
-    ['security-future-gcti', '未来', '待定', 'GCTI', 'candidate', 'planned', 0],
-    ['security-future-gcfa', '未来', '待定', 'GCFA', 'candidate', 'planned', 0],
-    ['security-future-gdat', '未来', '待定', 'GDAT', 'candidate', 'planned', 0]
-  ];
-  return security.map(item => ({ id: item[0], type: 'milestone', domain: 'security', year: item[1], period: item[2], title: item[3], milestoneType: item[4], status: item[5], progress: item[6], repo: null, target: null, notes: '', createdAt: null, updatedAt: null }));
-}
+const MODULE_TYPES = ['roadmap', 'github', 'performance', 'fitness'];
 
 function emptyPlanner() {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     updatedAt: null,
     goals: [],
     projects: [],
     tasks: [],
     events: [],
-    milestones: defaultMilestones(),
+    milestones: [],
     progressLogs: [],
-    fitness: { profile: null, weightLogs: [], strengthLogs: [], hikes: [] },
-    performance: { goals: [], controls: [], initiatives: [], evidence: [], checkpoints: [] },
-    categories: ['安全技能学习与实验室', 'GitHub 开源项目', '工作绩效管理', '个人健身']
+    fitness: { profile: null, weightLogs: [], strengthLogs: [], hikes: [], plans: [] },
+    performance: { goals: [], controls: [], initiatives: [], evidence: [], checkpoints: [], monthlyReviews: [], activities: [], promotion: [], targets: [] },
+    categories: [],
+    settings: { categoryLabels: [], modules: { roadmap: null, github: null, performance: null, fitness: null } }
   };
 }
 
 function asText(value, fallback = '') {
   return String(value ?? fallback).trim();
+}
+
+function normalizeSettings(value, categories = []) {
+  const source = value && typeof value === 'object' ? value : {};
+  const modules = source.modules && typeof source.modules === 'object' ? source.modules : {};
+  const validCategories = new Set(categories);
+  return {
+    categoryLabels: Array.isArray(source.categoryLabels) ? source.categoryLabels.map(item => ({
+      category: asText(item?.category),
+      labelEn: asText(item?.labelEn)
+    })).filter(item => validCategories.has(item.category)).slice(0, 30) : [],
+    modules: Object.fromEntries(MODULE_TYPES.map(type => {
+      const category = asText(modules[type]);
+      return [type, validCategories.has(category) ? category : null];
+    }))
+  };
 }
 
 function readPlanner() {
@@ -68,21 +56,23 @@ function readPlanner() {
     const data = {
       ...emptyPlanner(),
       ...parsed,
-      schemaVersion: 2,
+      schemaVersion: 3,
       goals: Array.isArray(parsed.goals) ? parsed.goals : [],
       projects: Array.isArray(parsed.projects) ? parsed.projects : [],
       tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
       events: Array.isArray(parsed.events) ? parsed.events : [],
-      milestones: Array.isArray(parsed.milestones) ? parsed.milestones : defaultMilestones(),
+      milestones: Array.isArray(parsed.milestones) ? parsed.milestones : [],
       progressLogs: Array.isArray(parsed.progressLogs) ? parsed.progressLogs : [],
       fitness: normalizeFitness(parsed.fitness),
       performance: normalizePerformance(parsed.performance),
-      categories: Array.isArray(parsed.categories) ? parsed.categories.map(item => asText(item)).filter(Boolean).slice(0, 30) : emptyPlanner().categories
+      categories: Array.isArray(parsed.categories) ? parsed.categories.map(item => asText(item)).filter(Boolean).slice(0, 30) : []
     };
+    data.settings = normalizeSettings(parsed.settings, data.categories);
+    const githubCategory = data.settings.modules.github;
     const seenGithubRefs = new Set();
     data.tasks = data.tasks.filter(task => {
       if (task.source !== 'github') return true;
-      task.category = GITHUB_CATEGORY;
+      if (githubCategory) task.category = githubCategory;
       if (!task.sourceRef || !seenGithubRefs.has(task.sourceRef)) { seenGithubRefs.add(task.sourceRef); return true; }
       return false;
     });
@@ -97,7 +87,8 @@ function readPlanner() {
 function writePlanner(data) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   if (fs.existsSync(DATA_FILE)) fs.copyFileSync(DATA_FILE, BACKUP_FILE);
-  const next = { ...data, schemaVersion: 2, fitness: normalizeFitness(data.fitness), performance: normalizePerformance(data.performance), updatedAt: new Date().toISOString() };
+  const categories = Array.isArray(data.categories) ? data.categories.map(item => asText(item)).filter(Boolean).slice(0, 30) : [];
+  const next = { ...data, schemaVersion: 3, categories, settings: normalizeSettings(data.settings, categories), fitness: normalizeFitness(data.fitness), performance: normalizePerformance(data.performance), updatedAt: new Date().toISOString() };
   const tempFile = `${DATA_FILE}.${process.pid}.tmp`;
   fs.writeFileSync(tempFile, JSON.stringify(next, null, 2), { encoding: 'utf8', mode: 0o600 });
   try {
@@ -134,7 +125,11 @@ function normalizePerformance(value) {
     controls: Array.isArray(source.controls) ? source.controls : [],
     initiatives: Array.isArray(source.initiatives) ? source.initiatives : [],
     evidence: Array.isArray(source.evidence) ? source.evidence : [],
-    checkpoints: Array.isArray(source.checkpoints) ? source.checkpoints : []
+    checkpoints: Array.isArray(source.checkpoints) ? source.checkpoints : [],
+    monthlyReviews: Array.isArray(source.monthlyReviews) ? source.monthlyReviews : [],
+    activities: Array.isArray(source.activities) ? source.activities : [],
+    promotion: Array.isArray(source.promotion) ? source.promotion : [],
+    targets: Array.isArray(source.targets) ? source.targets : []
   };
 }
 
@@ -144,30 +139,34 @@ function normalizeFitness(value) {
     profile: source.profile && typeof source.profile === 'object' ? { heightCm: Number(source.profile.heightCm) || null, weightKg: Number(source.profile.weightKg) || null, updatedAt: source.profile.updatedAt || null } : null,
     weightLogs: Array.isArray(source.weightLogs) ? source.weightLogs : [],
     strengthLogs: Array.isArray(source.strengthLogs) ? source.strengthLogs : [],
-    hikes: Array.isArray(source.hikes) ? source.hikes : []
+    hikes: Array.isArray(source.hikes) ? source.hikes : [],
+    plans: Array.isArray(source.plans) ? source.plans : []
   };
 }
 
 function performanceRecord(data, type, operation) {
   const performance = data.performance = normalizePerformance(data.performance);
-  const collectionByType = { goal: 'goals', control: 'controls', initiative: 'initiatives', evidence: 'evidence', checkpoint: 'checkpoints' };
+  const collectionByType = { goal: 'goals', control: 'controls', initiative: 'initiatives', evidence: 'evidence', checkpoint: 'checkpoints', monthlyReview: 'monthlyReviews', activity: 'activities', promotion: 'promotion' };
   const collection = collectionByType[type];
   if (!collection) throw new Error('Performance record type is invalid');
   const now = new Date().toISOString();
   const record = { id: randomUUID(), type, createdAt: now, updatedAt: now };
   if (type === 'goal') Object.assign(record, { title: operation.title, weight: operation.weight, successCriteria: operation.successCriteria || null, dueAt: operation.dueAt || null, status: 'not-assessed' });
-  if (type === 'control') Object.assign(record, { goalId: operation.goalId, title: operation.title, frequency: operation.frequency || null, dueAt: operation.dueAt || null, status: operation.status });
-  if (type === 'initiative') Object.assign(record, { goalId: operation.goalId, title: operation.title, status: operation.status, dueAt: operation.dueAt || null, progress: operation.progress, baseline: operation.baseline || null, targetOutcome: operation.targetOutcome || null, metricAfter: operation.metricAfter || null });
-  if (type === 'evidence') Object.assign(record, { goalId: operation.goalId || null, controlId: operation.controlId || null, initiativeId: operation.initiativeId || null, occurredAt: operation.occurredAt || now, contribution: operation.contribution, outcome: operation.outcome, metricBefore: operation.metricBefore || null, metricAfter: operation.metricAfter || null, evidenceType: operation.evidenceType || null, evidenceRef: operation.evidenceRef, confidentiality: operation.confidentiality || 'internal' });
-  if (type === 'checkpoint') Object.assign(record, { title: operation.title, dueAt: operation.dueAt || null, status: operation.status, requiredOutput: operation.requiredOutput || null });
+  if (type === 'control') Object.assign(record, { goalId: operation.goalId, title: operation.title, frequency: operation.frequency || null, dueAt: operation.dueAt || null, status: operation.status, reviewer: operation.reviewer || null, lastTestedAt: operation.lastTestedAt || null, evidenceRef: operation.evidenceRef || null });
+  if (type === 'initiative') Object.assign(record, { goalId: operation.goalId, title: operation.title, status: operation.status, dueAt: operation.dueAt || null, progress: operation.progress, baseline: operation.baseline || null, targetOutcome: operation.targetOutcome || null, metricAfter: operation.metricAfter || null, roleScope: operation.roleScope || null, productionApproved: operation.productionApproved || 'no', adoptedBeyondTeam: operation.adoptedBeyondTeam || 'no', evidenceRef: operation.evidenceRef || null, ipClassification: operation.ipClassification || null });
+  if (type === 'evidence') Object.assign(record, { goalId: operation.goalId || null, controlId: operation.controlId || null, initiativeId: operation.initiativeId || null, occurredAt: operation.occurredAt || now, contribution: operation.contribution, outcome: operation.outcome, metricBefore: operation.metricBefore || null, metricAfter: operation.metricAfter || null, measurementMethod: operation.measurementMethod || null, evidenceType: operation.evidenceType || null, evidenceRef: operation.evidenceRef, confidentiality: operation.confidentiality || 'internal', productionUse: operation.productionUse || 'no', crossTeamImpact: operation.crossTeamImpact || 'no', stakeholder: operation.stakeholder || null, reviewer: operation.reviewer || null, reviewedAt: operation.reviewedAt || null });
+  if (type === 'checkpoint') Object.assign(record, { title: operation.title, dueAt: operation.dueAt || null, status: operation.status, requiredOutput: operation.requiredOutput || null, completedAt: operation.completedAt || null, evidenceRef: operation.evidenceRef || null });
+  if (type === 'monthlyReview') Object.assign(record, { month: operation.month, kriResult: operation.kriResult, ttcCorrections: operation.ttcCorrections, sirComplete: operation.sirComplete, queueHealthy: operation.queueHealthy, workTimely: operation.workTimely, rasMet: operation.rasMet, overdueCount: operation.overdueCount, materialMiss: operation.materialMiss, evidenceRef: operation.evidenceRef || null, reviewer: operation.reviewer || null, reviewedAt: operation.reviewedAt || null });
+  if (type === 'activity') Object.assign(record, { goalId: operation.goalId || null, activityType: operation.activityType, title: operation.title, occurredAt: operation.occurredAt || null, role: operation.role || null, requiredOutcome: operation.requiredOutcome || null, ownedAction: operation.ownedAction || null, dueAt: operation.dueAt || null, status: operation.status, externalCollaboration: operation.externalCollaboration || 'no', evidenceRef: operation.evidenceRef || null });
+  if (type === 'promotion') Object.assign(record, { capability: operation.capability, currentEvidence: operation.currentEvidence || null, evidenceRef: operation.evidenceRef || null, managerAssessment: operation.managerAssessment || null, gapAction: operation.gapAction || null, dueAt: operation.dueAt || null, status: operation.status });
   performance[collection].unshift(record);
   return record;
 }
 
 function updatePerformanceRecord(data, operation) {
-  const collection = { goal: 'goals', control: 'controls', initiative: 'initiatives', evidence: 'evidence', checkpoint: 'checkpoints' }[operation.recordType];
+  const collection = { goal: 'goals', control: 'controls', initiative: 'initiatives', evidence: 'evidence', checkpoint: 'checkpoints', monthlyReview: 'monthlyReviews', activity: 'activities', promotion: 'promotion' }[operation.recordType];
   const record = findById(normalizePerformance(data.performance)[collection], operation.id, 'Performance record');
-  const allowed = ['title', 'status', 'dueAt', 'weight', 'progress', 'successCriteria', 'frequency', 'baseline', 'targetOutcome', 'metricAfter', 'contribution', 'outcome', 'metricBefore', 'evidenceType', 'evidenceRef', 'confidentiality', 'requiredOutput'];
+  const allowed = ['title', 'status', 'dueAt', 'weight', 'progress', 'successCriteria', 'frequency', 'baseline', 'targetOutcome', 'metricAfter', 'contribution', 'outcome', 'metricBefore', 'evidenceType', 'evidenceRef', 'confidentiality', 'requiredOutput', 'reviewer', 'lastTestedAt', 'roleScope', 'productionApproved', 'adoptedBeyondTeam', 'ipClassification', 'measurementMethod', 'productionUse', 'crossTeamImpact', 'stakeholder', 'reviewedAt', 'completedAt', 'month', 'kriResult', 'ttcCorrections', 'sirComplete', 'queueHealthy', 'workTimely', 'rasMet', 'overdueCount', 'materialMiss', 'activityType', 'occurredAt', 'role', 'ownedAction', 'externalCollaboration', 'capability', 'currentEvidence', 'managerAssessment', 'gapAction'];
   for (const field of allowed) if (field in operation) record[field] = operation[field];
   record.updatedAt = new Date().toISOString();
   return record;
@@ -273,6 +272,62 @@ function deleteFitnessSession(data, operation) {
   return data.fitness.strengthLogs.splice(index, 1)[0];
 }
 
+function saveCategory(data, operation, updating = false) {
+  data.categories = Array.isArray(data.categories) ? data.categories : [];
+  data.settings = normalizeSettings(data.settings, data.categories);
+  const oldName = updating ? required(operation.oldName, 'Existing category name') : null;
+  const name = required(operation.name, 'Category name');
+  if (updating && !data.categories.includes(oldName)) throw new Error('Category was not found');
+  if ((!updating || oldName !== name) && data.categories.includes(name)) throw new Error('Category already exists');
+  if (updating) {
+    data.categories[data.categories.indexOf(oldName)] = name;
+    for (const task of data.tasks) if (task.category === oldName) task.category = name;
+    for (const type of MODULE_TYPES) if (data.settings.modules[type] === oldName) data.settings.modules[type] = name;
+    data.settings.categoryLabels = data.settings.categoryLabels.filter(item => item.category !== oldName);
+  } else {
+    data.categories.push(name);
+  }
+  if (operation.labelEn) data.settings.categoryLabels.push({ category: name, labelEn: operation.labelEn });
+  if (operation.module) {
+    for (const type of MODULE_TYPES) if (data.settings.modules[type] === name) data.settings.modules[type] = null;
+    if (operation.module !== 'none') data.settings.modules[operation.module] = name;
+  }
+  return { name, labelEn: operation.labelEn || null, module: operation.module || null };
+}
+
+function deleteCategory(data, operation) {
+  const name = required(operation.name, 'Category name');
+  if (data.tasks.some(task => task.category === name)) throw new Error('Move or delete tasks in this category before removing it');
+  data.categories = (data.categories || []).filter(category => category !== name);
+  data.settings = normalizeSettings(data.settings, data.categories);
+  return name;
+}
+
+function configuredRecord(data, collection, operation, mode) {
+  const owner = collection === 'plans' ? (data.fitness = normalizeFitness(data.fitness)) : (data.performance = normalizePerformance(data.performance));
+  if (mode === 'create') {
+    const item = { id: randomUUID(), name: operation.name, labelEn: operation.labelEn || null };
+    if (collection === 'plans') Object.assign(item, { focus: operation.focus || null, focusEn: operation.focusEn || null });
+    else item.target = operation.target;
+    owner[collection].push(item);
+    return item;
+  }
+  const index = owner[collection].findIndex(item => item.id === operation.id);
+  if (index < 0) throw new Error('Configured item was not found');
+  if (mode === 'delete') return owner[collection].splice(index, 1)[0];
+  const item = owner[collection][index];
+  for (const field of collection === 'plans' ? ['name', 'labelEn', 'focus', 'focusEn'] : ['name', 'labelEn', 'target']) if (field in operation) item[field] = operation[field];
+  return item;
+}
+
+function deletePerformanceRecord(data, operation) {
+  const collection = { goal: 'goals', control: 'controls', initiative: 'initiatives', evidence: 'evidence', checkpoint: 'checkpoints', monthlyReview: 'monthlyReviews', activity: 'activities', promotion: 'promotion' }[operation.recordType];
+  const items = normalizePerformance(data.performance)[collection];
+  const index = items.findIndex(item => item.id === operation.id);
+  if (index < 0) throw new Error('Performance record was not found');
+  return items.splice(index, 1)[0];
+}
+
 function applyOperation(data, operation) {
   if (!operation || typeof operation !== 'object') throw new Error('Each planner operation must be an object');
   const type = asText(operation.type);
@@ -285,19 +340,20 @@ function applyOperation(data, operation) {
   if (type === 'create_performance_initiative') return { type, item: performanceRecord(data, 'initiative', operation) };
   if (type === 'create_performance_evidence') return { type, item: performanceRecord(data, 'evidence', operation) };
   if (type === 'create_performance_checkpoint') return { type, item: performanceRecord(data, 'checkpoint', operation) };
+  if (type === 'create_performance_monthly_review') return { type, item: performanceRecord(data, 'monthlyReview', operation) };
+  if (type === 'create_performance_activity') return { type, item: performanceRecord(data, 'activity', operation) };
+  if (type === 'create_performance_promotion') return { type, item: performanceRecord(data, 'promotion', operation) };
   if (type === 'update_performance_record') return { type, item: updatePerformanceRecord(data, operation) };
-  if (type === 'create_category') {
-    const name = required(operation.name, 'Category name');
-    data.categories = Array.isArray(data.categories) ? data.categories : [];
-    if (!data.categories.includes(name)) data.categories.push(name);
-    return { type, item: name };
-  }
-  if (type === 'delete_category') {
-    const name = required(operation.name, 'Category name');
-    if (data.tasks.some(task => task.category === name)) throw new Error('Move or delete tasks in this category before removing it');
-    data.categories = (data.categories || []).filter(category => category !== name);
-    return { type, item: name };
-  }
+  if (type === 'delete_performance_record') return { type, item: deletePerformanceRecord(data, operation) };
+  if (type === 'create_category') return { type, item: saveCategory(data, operation) };
+  if (type === 'update_category') return { type, item: saveCategory(data, operation, true) };
+  if (type === 'delete_category') return { type, item: deleteCategory(data, operation) };
+  if (type === 'create_fitness_plan') return { type, item: configuredRecord(data, 'plans', operation, 'create') };
+  if (type === 'update_fitness_plan') return { type, item: configuredRecord(data, 'plans', operation, 'update') };
+  if (type === 'delete_fitness_plan') return { type, item: configuredRecord(data, 'plans', operation, 'delete') };
+  if (type === 'create_performance_target') return { type, item: configuredRecord(data, 'targets', operation, 'create') };
+  if (type === 'update_performance_target') return { type, item: configuredRecord(data, 'targets', operation, 'update') };
+  if (type === 'delete_performance_target') return { type, item: configuredRecord(data, 'targets', operation, 'delete') };
   if (type === 'create_event') return { type, item: createEvent(data, operation) };
   if (type === 'update_event') return { type, item: updateEvent(data, operation) };
   if (type === 'delete_event') { const index = data.events.findIndex(item => item.id === operation.id); if (index < 0) throw new Error('Event was not found'); return { type, item: data.events.splice(index, 1)[0] }; }
@@ -421,7 +477,7 @@ function syncGithubToPlanner(githubData) {
         sourceRef,
         sourceUpdatedAt: asText(issue.updatedAt) || null,
         sourcePolishVersion: hasPolishPayload ? (asText(issue.plannerPolishVersion) || 'github-raw-v2') : (existing?.sourcePolishVersion || 'github-raw-v2'),
-        category: GITHUB_CATEGORY,
+        category: data.settings.modules.github || null,
         tags: hasPolishPayload ? (Array.isArray(issue.plannerTags) ? issue.plannerTags : []) : (existing?.tags || []),
         parentId: project.id
       };

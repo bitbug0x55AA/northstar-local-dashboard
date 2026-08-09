@@ -35,6 +35,17 @@ test('unsupported cumulative Codex snapshots are not added as request usage', t 
   assert.equal(usage.creditSnapshots.length, 0, 'a credits object without a balance is not a zero-balance snapshot');
 });
 
+test('Codex exposes a reported model window without inventing a context snapshot', t => {
+  const directory = tempDirectory();
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const record = { timestamp: new Date().toISOString(), type: 'event_msg', payload: { session_id: 'session-window-only', info: { model_context_window: 258400, last_token_usage: { input_tokens: 86000, output_tokens: 200, total_tokens: 86200 } } } };
+  fs.writeFileSync(path.join(directory, 'session.jsonl'), `${JSON.stringify(record)}\n`);
+  const usage = usageFromPath('codex', directory, 1000000);
+  assert.equal(usage.sessionDetails[0].contextWindow, 258400);
+  assert.equal(usage.sessionDetails[0].contextTokens, null, 'request usage must not be presented as current context');
+  assert.equal(usage.sessionWindows.length, 0, 'a window alone cannot support a capacity or alert calculation');
+});
+
 test('Claude adapter reports explicit tool failures without involving Ollama', t => {
   const directory = tempDirectory();
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
