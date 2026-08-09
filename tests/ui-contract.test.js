@@ -47,7 +47,7 @@ test('every rendered button has an explicit interaction contract', () => {
   const buttonTags = sources.flatMap(source => source.content.match(/<button\b[^>]*>/g) || []);
   assert.ok(buttonTags.length >= 30, 'expected the full dashboard button surface to be scanned');
   const handledDataAttributes = ['data-view', 'data-github-subview', 'data-github-view', 'data-go', 'data-planner-tab', 'data-planner-sidepage', 'data-obs-tab', 'data-fitness-log', 'data-mode'];
-  const handledClasses = ['ci-check', 'planner-complete', 'planner-edit', 'planner-delete', 'planner-remove-category', 'obs-action', 'fitness-close', 'fitness-profile-save', 'fitness-weight-log', 'fitness-review-button', 'fitness-soreness'];
+  const handledClasses = ['ci-check', 'planner-complete', 'planner-edit', 'planner-delete', 'planner-remove-category', 'obs-action', 'fitness-close', 'fitness-profile-save', 'fitness-weight-log', 'fitness-review-button', 'fitness-edit', 'fitness-delete', 'fitness-exercise-add', 'fitness-exercise-remove', 'security-edit-milestone', 'weekly-edit-event'];
 
   for (const button of buttonTags) {
     const id = button.match(/\bid=["']([^"']+)["']/)?.[1];

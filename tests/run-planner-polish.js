@@ -12,10 +12,16 @@ const fakeLlm = http.createServer((req, res) => {
   req.on('end', () => {
     calls += 1;
     const input = JSON.parse(JSON.parse(body).messages[1].content);
-    const items = calls === 1 ? input.map(issue => ({
+    const items = input[0].number === 1 ? [input[0]].map(issue => ({
       sourceRef: issue.sourceRef,
       title: `#${issue.number} 优化后的任务 ${issue.number}`,
       notes: '执行摘要',
+      category: 'feature',
+      tags: ['test']
+    })) : input[0].number === 2 ? input.map(issue => ({
+      sourceRef: issue.sourceRef,
+      title: `#${issue.number} polished task ${issue.number}`,
+      notes: 'Execution summary',
       category: 'feature',
       tags: ['test']
     })) : [];
@@ -34,9 +40,10 @@ fakeLlm.listen(0, '127.0.0.1', async () => {
     assert.equal(result.batches, 2);
     assert.equal(result.failedBatches.length, 1);
     assert.equal(result.failedSourceRefs.length, 1);
+    assert.equal(result.items[1].sourceRef, 'github:demo#2', 'a recovered missing item must not fall back');
     assert.equal(result.items[0].title, '#1 优化后的任务 1');
     assert.equal(result.items.at(-1).title, '#3 Raw issue 3');
-    assert.equal(calls, 2);
+    assert.equal(calls, 4);
     console.log('Planner GitHub polish batching checks passed');
   } finally {
     if (previousUrl === undefined) delete process.env.NORTHSTAR_LLM_URL; else process.env.NORTHSTAR_LLM_URL = previousUrl;

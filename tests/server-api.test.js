@@ -138,6 +138,21 @@ test('planner API is enabled but requires explicit confirmation for LLM changes'
   assert.equal(saved.status, 200);
   const planner = await request('GET', '/api/planner');
   assert.equal(planner.body.tasks.length, 1);
+  assert.ok(planner.body.milestones.length >= 20, 'roadmap defaults must migrate into editable Planner data');
+
+  const milestoneCreated = await request('POST', '/api/planner/operations', { operations: [{ type: 'create_milestone', domain: 'security', milestoneType: 'certification', title: 'Editable certification', year: '2029', period: 'Q1', status: 'in-progress', progress: 30 }] }, { Origin: localOrigin });
+  assert.equal(milestoneCreated.status, 200);
+  const milestoneId = milestoneCreated.body.results[0].item.id;
+  const milestoneUpdated = await request('POST', '/api/planner/operations', { operations: [{ type: 'update_milestone', id: milestoneId, title: 'Updated certification', status: 'done', progress: 40 }] }, { Origin: localOrigin });
+  assert.equal(milestoneUpdated.body.results[0].item.progress, 100, 'completed milestones must report full progress');
+  const milestoneDeleted = await request('POST', '/api/planner/operations', { operations: [{ type: 'delete_milestone', id: milestoneId }] }, { Origin: localOrigin });
+  assert.equal(milestoneDeleted.status, 200);
+
+  const eventCreated = await request('POST', '/api/planner/operations', { operations: [{ type: 'create_event', title: 'Editable lab', startAt: '2026-08-10T09:00:00Z', endAt: '2026-08-10T10:00:00Z' }] }, { Origin: localOrigin });
+  const eventId = eventCreated.body.results[0].item.id;
+  const eventUpdated = await request('POST', '/api/planner/operations', { operations: [{ type: 'update_event', id: eventId, title: 'Updated lab', startAt: '2026-08-10T10:00:00Z', endAt: '2026-08-10T11:30:00Z' }] }, { Origin: localOrigin });
+  assert.equal(eventUpdated.body.results[0].item.title, 'Updated lab');
+  assert.equal((await request('POST', '/api/planner/operations', { operations: [{ type: 'delete_event', id: eventId }] }, { Origin: localOrigin })).status, 200);
 
   const sync = await request('POST', '/api/planner/github-sync', {
     language: 'zh',
@@ -145,6 +160,11 @@ test('planner API is enabled but requires explicit confirmation for LLM changes'
   }, { Origin: localOrigin });
   assert.equal(sync.status, 200);
   assert.equal(sync.body.results.polishFailures, 1);
+  const repeatedSync = await request('POST', '/api/planner/github-sync', {
+    language: 'zh',
+    github: { repos: [{ name: 'demo', issues: [{ number: 7, title: 'Raw issue', labels: [], updatedAt: '2026-08-09T00:00:00Z' }], closedIssues: [] }] }
+  }, { Origin: localOrigin });
+  assert.equal(repeatedSync.status, 200);
   const llmEvents = await request('GET', '/api/observability?tab=llm');
-  assert.ok(llmEvents.body.events.some(event => event.eventType === 'github_polish_failure'));
+  assert.equal(llmEvents.body.events.filter(event => event.eventType === 'github_polish_failure').length, 1, 'repeated failures are deduplicated for one hour');
 });

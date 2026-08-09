@@ -7,6 +7,11 @@
   "allowedOperations": {
     "create_task": ["title", "notes", "status", "priority", "dueAt", "projectId", "source", "sourceRef", "category", "tags", "parentId"],
     "create_event": ["title", "notes", "startAt", "endAt", "source"],
+    "update_event": ["id", "title", "notes", "startAt", "endAt"],
+    "delete_event": ["id"],
+    "create_milestone": ["domain", "milestoneType", "title", "period", "year", "status", "progress", "repo", "target", "notes"],
+    "update_milestone": ["id", "domain", "milestoneType", "title", "period", "year", "status", "progress", "repo", "target", "notes"],
+    "delete_milestone": ["id"],
     "log_progress": ["content", "projectId", "occurredAt", "source"],
     "update_task": ["id", "title", "notes", "status", "priority", "dueAt", "projectId", "source", "sourceRef", "category", "tags", "parentId"],
     "delete_task": ["id"],
@@ -18,15 +23,16 @@
     "create_performance_evidence": ["goalId", "controlId", "initiativeId", "occurredAt", "contribution", "outcome", "metricBefore", "metricAfter", "evidenceType", "evidenceRef", "confidentiality"],
     "create_performance_checkpoint": ["title", "dueAt", "status", "requiredOutput"],
     "update_performance_record": ["recordType", "id", "title", "status", "dueAt", "weight", "progress", "successCriteria", "frequency", "baseline", "targetOutcome", "metricAfter", "contribution", "outcome", "metricBefore", "metricAfter", "evidenceType", "evidenceRef", "confidentiality", "requiredOutput"],
-    "log_fitness_session": ["plan", "session", "performedAt", "durationMinutes", "sets", "reps", "loadKg", "rpe", "quality", "soreness24", "soreness48", "notes"],
+    "log_fitness_session": ["plan", "session", "performedAt", "durationMinutes", "exercises", "rpe", "quality", "soreness24", "soreness48", "notes"],
+    "update_fitness_session": ["id", "plan", "session", "performedAt", "durationMinutes", "exercises", "rpe", "quality", "soreness24", "soreness48", "notes"],
+    "delete_fitness_session": ["id"],
     "log_hike": ["performedAt", "durationMinutes", "distanceKm", "elevationM", "effort", "notes"],
     "update_fitness_profile": ["heightCm", "weightKg"],
-    "log_fitness_weight": ["weightKg", "measuredAt"],
-    "update_fitness_session": ["id", "soreness24", "soreness48"]
+    "log_fitness_weight": ["weightKg", "measuredAt"]
   },
   "allowedStatuses": ["planned", "in-progress", "done", "cancelled"],
   "allowedPriorities": ["low", "medium", "high"],
-  "forbiddenOperations": ["delete_event", "modify_github", "run_command", "send_message", "read_secret"],
+  "forbiddenOperations": ["modify_github", "run_command", "send_message", "read_secret"],
   "requiresConfirmation": true,
   "testModeWritesData": false
 }

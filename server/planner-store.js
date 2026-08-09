@@ -12,6 +12,35 @@ const DATA_FILE = path.join(DATA_DIR, 'planner-data.json');
 const BACKUP_FILE = path.join(DATA_DIR, 'planner-data.json.bak');
 const GITHUB_CATEGORY = 'GitHub 开源项目';
 
+function defaultMilestones() {
+  const security = [
+    ['security-2025-cti', '2025', '10月', 'MAD20 Cyber Threat Intelligence', 'certification', 'done', 100],
+    ['security-2025-ejpt', '2025', '10–12月', 'eJPT Learning Path', 'certification', 'done', 100],
+    ['security-2025-soc', '2025', '12月', 'MAD20 SOC Assessment', 'certification', 'done', 100],
+    ['security-2026-btl1', '2026', '1月', 'BTL1', 'certification', 'done', 100],
+    ['security-2026-cdsa', '2026', '2–4月', 'HTB CDSA', 'certification', 'done', 100],
+    ['security-2026-adversary', '2026', '上半年', 'MAD20 Adversary Emulation Methodology', 'course', 'done', 100],
+    ['security-2026-memory', '2026', '上半年', '13Cubed Windows Memory Analysis', 'course', 'done', 100],
+    ['security-2026-hunting', '2026', '5月', 'MAD20 Threat Hunting & Detection Engineering', 'course', 'done', 100],
+    ['security-2026-purple', '2026', '7–12月', 'MAD20 Purple Teaming Methodology', 'course', 'done', 100],
+    ['security-2026-assembly', '2026', '7–12月', 'OpenSecurityTraining2 Architect 1001: x86-64 Assembly', 'course', 'in-progress', 0],
+    ['security-2026-pmrp', '2026', '7–12月', 'TCM Practical Malware Research Professional', 'certification', 'in-progress', 0],
+    ['security-2026-ccfh', '2026', '7–12月', 'CrowdStrike CCFH', 'certification', 'in-progress', 0],
+    ['security-2027-arcx', '2027', '1–3月', 'arcX Cyber Threat Intelligence Practitioner', 'certification', 'planned', 0],
+    ['security-2027-cptia', '2027', '1–3月', 'CREST CPTIA', 'certification', 'planned', 0],
+    ['security-2027-crtp', '2027', '4–6月', 'CRTP', 'certification', 'planned', 0],
+    ['security-2027-mscloud', '2027', '8–9月', 'Pwned Labs Microsoft Cloud Attack & Defense Bootcamp', 'course', 'planned', 0],
+    ['security-2027-crto', '2027', '10–12月', 'CRTO', 'certification', 'planned', 0],
+    ['security-2028-xintra', '2028', '1–2月', 'XINTRA Azure / M365', 'course', 'planned', 0],
+    ['security-2028-aws', '2028', '3月', 'Pwned Labs Amazon Cloud Attack & Defense Bootcamp', 'course', 'planned', 0],
+    ['security-2028-oscp', '2028', '8–10月', 'OSCP', 'certification', 'planned', 0],
+    ['security-future-gcti', '未来', '待定', 'GCTI', 'candidate', 'planned', 0],
+    ['security-future-gcfa', '未来', '待定', 'GCFA', 'candidate', 'planned', 0],
+    ['security-future-gdat', '未来', '待定', 'GDAT', 'candidate', 'planned', 0]
+  ];
+  return security.map(item => ({ id: item[0], type: 'milestone', domain: 'security', year: item[1], period: item[2], title: item[3], milestoneType: item[4], status: item[5], progress: item[6], repo: null, target: null, notes: '', createdAt: null, updatedAt: null }));
+}
+
 function emptyPlanner() {
   return {
     schemaVersion: 2,
@@ -20,6 +49,7 @@ function emptyPlanner() {
     projects: [],
     tasks: [],
     events: [],
+    milestones: defaultMilestones(),
     progressLogs: [],
     fitness: { profile: null, weightLogs: [], strengthLogs: [], hikes: [] },
     performance: { goals: [], controls: [], initiatives: [], evidence: [], checkpoints: [] },
@@ -43,6 +73,7 @@ function readPlanner() {
       projects: Array.isArray(parsed.projects) ? parsed.projects : [],
       tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
       events: Array.isArray(parsed.events) ? parsed.events : [],
+      milestones: Array.isArray(parsed.milestones) ? parsed.milestones : defaultMilestones(),
       progressLogs: Array.isArray(parsed.progressLogs) ? parsed.progressLogs : [],
       fitness: normalizeFitness(parsed.fitness),
       performance: normalizePerformance(parsed.performance),
@@ -187,6 +218,16 @@ function createEvent(data, operation) {
   return event;
 }
 
+function createMilestone(data, operation) {
+  const now = new Date().toISOString();
+  const milestone = { id: randomUUID(), type: 'milestone', domain: operation.domain, milestoneType: operation.milestoneType, title: operation.title, period: operation.period || null, year: operation.year || null, status: operation.status || 'planned', progress: Number(operation.progress || 0), repo: operation.repo || null, target: operation.target || null, notes: operation.notes || '', createdAt: now, updatedAt: now };
+  data.milestones.unshift(milestone); return milestone;
+}
+
+function updateMilestone(data, operation) { const milestone = findById(data.milestones, operation.id, 'Milestone'); for (const field of ['domain', 'milestoneType', 'title', 'period', 'year', 'status', 'progress', 'repo', 'target', 'notes']) if (field in operation) milestone[field] = operation[field]; milestone.updatedAt = new Date().toISOString(); return milestone; }
+
+function updateEvent(data, operation) { const event = findById(data.events, operation.id, 'Event'); for (const field of ['title', 'notes', 'startAt', 'endAt']) if (field in operation) event[field] = operation[field]; if (event.endAt && new Date(event.endAt) <= new Date(event.startAt)) throw new Error('Event endAt must be after startAt'); event.updatedAt = new Date().toISOString(); return event; }
+
 function logFitnessSession(data, operation) {
   const record = { id: randomUUID(), type: 'strength', ...operation, createdAt: new Date().toISOString() };
   delete record.type;
@@ -220,15 +261,25 @@ function logFitnessWeight(data, operation) {
 function updateFitnessSession(data, operation) {
   data.fitness = normalizeFitness(data.fitness);
   const record = findById(data.fitness.strengthLogs, operation.id, 'Fitness session');
-  for (const field of ['soreness24', 'soreness48']) if (operation[field] !== undefined) record[field] = operation[field];
+  for (const field of ['plan', 'session', 'performedAt', 'durationMinutes', 'exercises', 'rpe', 'quality', 'soreness24', 'soreness48', 'notes']) record[field] = operation[field];
   record.updatedAt = new Date().toISOString();
   return record;
+}
+
+function deleteFitnessSession(data, operation) {
+  data.fitness = normalizeFitness(data.fitness);
+  const index = data.fitness.strengthLogs.findIndex(record => record.id === operation.id);
+  if (index < 0) throw new Error('Fitness session not found');
+  return data.fitness.strengthLogs.splice(index, 1)[0];
 }
 
 function applyOperation(data, operation) {
   if (!operation || typeof operation !== 'object') throw new Error('Each planner operation must be an object');
   const type = asText(operation.type);
   if (type === 'create_task') return { type, item: createTask(data, operation) };
+  if (type === 'create_milestone') return { type, item: createMilestone(data, operation) };
+  if (type === 'update_milestone') return { type, item: updateMilestone(data, operation) };
+  if (type === 'delete_milestone') { const index = data.milestones.findIndex(item => item.id === operation.id); if (index < 0) throw new Error('Milestone was not found'); return { type, item: data.milestones.splice(index, 1)[0] }; }
   if (type === 'create_performance_goal') return { type, item: performanceRecord(data, 'goal', operation) };
   if (type === 'create_performance_control') return { type, item: performanceRecord(data, 'control', operation) };
   if (type === 'create_performance_initiative') return { type, item: performanceRecord(data, 'initiative', operation) };
@@ -248,7 +299,10 @@ function applyOperation(data, operation) {
     return { type, item: name };
   }
   if (type === 'create_event') return { type, item: createEvent(data, operation) };
+  if (type === 'update_event') return { type, item: updateEvent(data, operation) };
+  if (type === 'delete_event') { const index = data.events.findIndex(item => item.id === operation.id); if (index < 0) throw new Error('Event was not found'); return { type, item: data.events.splice(index, 1)[0] }; }
   if (type === 'log_fitness_session') return { type, item: logFitnessSession(data, operation) };
+  if (type === 'delete_fitness_session') return { type, item: deleteFitnessSession(data, operation) };
   if (type === 'log_hike') return { type, item: logHike(data, operation) };
   if (type === 'update_fitness_profile') return { type, item: updateFitnessProfile(data, operation) };
   if (type === 'log_fitness_weight') return { type, item: logFitnessWeight(data, operation) };

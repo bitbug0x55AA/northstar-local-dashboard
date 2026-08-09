@@ -142,6 +142,18 @@ function rawGithubPolish(issue) {
   };
 }
 
+function normalizedGithubPolish(fallback, polished) {
+  const title = String(polished.title || '').trim();
+  const issuePrefix = `#${fallback.sourceRef.slice(fallback.sourceRef.lastIndexOf('#') + 1)}`;
+  return {
+    sourceRef: fallback.sourceRef,
+    title: (title.startsWith(issuePrefix) ? title : `${issuePrefix} ${title}`).trim().slice(0, 1000),
+    notes: typeof polished.notes === 'string' && polished.notes.trim() ? polished.notes.trim().slice(0, 1000) : fallback.notes,
+    category: fallback.category,
+    tags: Array.isArray(polished.tags) ? polished.tags.filter(tag => typeof tag === 'string' && tag.trim()).map(tag => tag.trim().slice(0, 40)).slice(0, 6) : fallback.tags
+  };
+}
+
 async function polishGithubIssues(issues, language = 'zh') {
   const candidates = (Array.isArray(issues) ? issues : []).filter(issue => issue && issue.repo && issue.number != null && issue.title).slice(0, 20);
   const fallback = candidates.map(rawGithubPolish);
@@ -174,6 +186,19 @@ async function polishGithubIssues(issues, language = 'zh') {
   const failedBatches = [];
   const failedSourceRefs = [];
   const startedAt = Date.now();
+  const isOllamaApi = /\/api\/chat(?:\?|$)/i.test(endpoint);
+  async function requestPolish(input) {
+    const response = await requestJson(endpoint, isOllamaApi ? {
+      model, stream: false, format: 'json', keep_alive: process.env.NORTHSTAR_LLM_KEEP_ALIVE || '5m',
+      options: { temperature: 0, seed: 42 },
+      messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(input) }]
+    } : {
+      model, temperature: 0, messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(input) }], response_format: { type: 'json_object' }
+    }, githubPolishTimeoutMs());
+    const content = response.choices?.[0]?.message?.content || response.message?.content || response.output_text;
+    const parsed = extractJson(content);
+    return new Map((parsed.items || []).map(item => [String(item.sourceRef || ''), item]));
+  }
   for (let offset = 0; offset < candidates.length; offset += GITHUB_POLISH_BATCH_SIZE) {
     const batch = candidates.slice(offset, offset + GITHUB_POLISH_BATCH_SIZE);
     const batchFallback = batch.map(rawGithubPolish);
@@ -187,35 +212,34 @@ async function polishGithubIssues(issues, language = 'zh') {
       body: issue.body ? String(issue.body).slice(0, 600) : null
     }));
     try {
-      const isOllamaApi = /\/api\/chat(?:\?|$)/i.test(endpoint);
-      const response = await requestJson(endpoint, isOllamaApi ? {
-        model, stream: false, format: 'json', keep_alive: process.env.NORTHSTAR_LLM_KEEP_ALIVE || '5m',
-        messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(batchInput) }]
-      } : {
-        model, temperature: 0, messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(batchInput) }], response_format: { type: 'json_object' }
-      }, githubPolishTimeoutMs());
-      const content = response.choices?.[0]?.message?.content || response.message?.content || response.output_text;
-      const parsed = extractJson(content);
-      const byRef = new Map((parsed.items || []).map(item => [String(item.sourceRef || ''), item]));
-      const missing = batchFallback.filter(item => {
+      const byRef = await requestPolish(batchInput);
+      let missing = batchFallback.filter(item => {
         const polished = byRef.get(item.sourceRef);
         return !polished || typeof polished.title !== 'string' || !polished.title.trim();
+      });
+      for (const fallbackItem of missing) {
+        const retryInput = batchInput.filter(item => item.sourceRef === fallbackItem.sourceRef);
+        try {
+          const retried = await requestPolish(retryInput);
+          const retryItem = retried.get(fallbackItem.sourceRef);
+          if (retryItem && typeof retryItem.title === 'string' && retryItem.title.trim()) byRef.set(fallbackItem.sourceRef, retryItem);
+        } catch { /* The final missing-item check records the fallback. */ }
+      }
+      missing = batchFallback.filter(item => {
+        const polished = byRef.get(item.sourceRef);
+        return !polished || typeof polished.title !== 'string' || !polished.title.trim();
+      });
+      batchFallback.filter(item => !missing.includes(item)).forEach(item => {
+        items.push(normalizedGithubPolish(item, byRef.get(item.sourceRef)));
       });
       if (missing.length) {
         const error = new Error(`Local LLM response omitted ${missing.length} GitHub Planner item(s)`);
         error.code = 'LLM_INCOMPLETE_RESPONSE';
-        throw error;
+        items.push(...missing);
+        const sourceRefs = missing.map(item => item.sourceRef);
+        failedSourceRefs.push(...sourceRefs);
+        failedBatches.push({ sourceRefs, error: error.message, code: error.code });
       }
-      batchFallback.forEach(item => {
-        const polished = byRef.get(item.sourceRef);
-        items.push({
-          sourceRef: item.sourceRef,
-          title: polished.title.trim().slice(0, 1000),
-          notes: typeof polished.notes === 'string' && polished.notes.trim() ? polished.notes.trim().slice(0, 1000) : item.notes,
-          category: typeof polished.category === 'string' && polished.category.trim() ? polished.category.trim().slice(0, 80) : item.category,
-          tags: Array.isArray(polished.tags) ? polished.tags.filter(tag => typeof tag === 'string' && tag.trim()).map(tag => tag.trim().slice(0, 40)).slice(0, 6) : item.tags
-        });
-      });
     } catch (error) {
       items.push(...batchFallback);
       const sourceRefs = batch.map(item => githubIssueRef(item.repo, item.number));

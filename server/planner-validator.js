@@ -30,6 +30,38 @@ function normalizedSource(value, fallback) {
   return value === 'llm' ? 'llm' : fallback;
 }
 
+function normalizeFitnessExercises(value) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 20) throw new Error('Fitness exercises must contain between 1 and 20 items');
+  return value.map((exercise, index) => {
+    if (!exercise || typeof exercise !== 'object' || Array.isArray(exercise)) throw new Error(`Fitness exercise ${index + 1} is invalid`);
+    const output = { exerciseName: boundedText(exercise.exerciseName, 'Fitness exercise name', true, 120) };
+    output.setsArePerSide = exercise.setsArePerSide === true || exercise.setsArePerSide === 'true';
+    for (const field of ['sets', 'reps', 'loadKg']) {
+      const number = Number(exercise[field]);
+      if (!Number.isFinite(number) || number < 0) throw new Error(`Fitness exercise ${field} is invalid`);
+      output[field] = number;
+    }
+    return output;
+  });
+}
+
+function normalizeFitnessSession(output, { includeId = false } = {}) {
+  if (includeId) output.id = boundedText(output.id, 'Fitness session id', true);
+  output.plan = boundedText(output.plan, 'Fitness plan', true, 40);
+  if (output.plan !== 'strength') throw new Error('Fitness plan is invalid');
+  output.session = boundedText(output.session, 'Fitness session', true, 10);
+  if (!['A', 'B', 'C'].includes(output.session)) throw new Error('Fitness session must be A, B, or C');
+  output.performedAt = normalizeDate(output.performedAt, 'Fitness performedAt') || new Date().toISOString();
+  output.exercises = normalizeFitnessExercises(output.exercises);
+  for (const field of ['durationMinutes', 'rpe', 'quality', 'soreness24', 'soreness48']) {
+    if (['soreness24', 'soreness48'].includes(field) && (output[field] === '' || output[field] === null || output[field] === undefined)) { output[field] = null; continue; }
+    const value = Number(output[field]);
+    if (!Number.isFinite(value) || value < 0 || (['rpe', 'soreness24', 'soreness48'].includes(field) && value > 10) || (field === 'quality' && value > 5)) throw new Error(`Fitness ${field} is invalid`);
+    output[field] = value;
+  }
+  output.notes = boundedText(output.notes, 'Fitness notes', false, 1000);
+}
+
 function normalizeOperation(input, source) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Each planner operation must be an object');
   const type = asText(input.type);
@@ -57,6 +89,27 @@ function normalizeOperation(input, source) {
     output.startAt = normalizeDate(output.startAt, 'Event startAt', true);
     output.endAt = normalizeDate(output.endAt, 'Event endAt');
     if (output.endAt && new Date(output.endAt) < new Date(output.startAt)) throw new Error('Event endAt must be after startAt');
+  } else if (type === 'update_event') {
+    output.id = boundedText(output.id, 'Event id', true);
+    if (output.title !== undefined) output.title = boundedText(output.title, 'Event title', true);
+    if (output.notes !== undefined) output.notes = boundedText(output.notes, 'Event notes');
+    if (output.startAt !== undefined) output.startAt = normalizeDate(output.startAt, 'Event startAt', true);
+    if (output.endAt !== undefined) output.endAt = normalizeDate(output.endAt, 'Event endAt');
+    if (!['title', 'notes', 'startAt', 'endAt'].some(key => key in output)) throw new Error('Event update has no editable fields');
+  } else if (type === 'delete_event') {
+    output.id = boundedText(output.id, 'Event id', true);
+  } else if (type === 'create_milestone' || type === 'update_milestone') {
+    if (type === 'update_milestone') output.id = boundedText(output.id, 'Milestone id', true);
+    if (output.domain !== undefined || type === 'create_milestone') { output.domain = boundedText(output.domain, 'Milestone domain', true, 30); if (!['security', 'github'].includes(output.domain)) throw new Error('Milestone domain is invalid'); }
+    if (output.milestoneType !== undefined || type === 'create_milestone') output.milestoneType = boundedText(output.milestoneType, 'Milestone type', true, 40);
+    if (output.title !== undefined || type === 'create_milestone') output.title = boundedText(output.title, 'Milestone title', true, 200);
+    for (const field of ['period', 'year', 'repo', 'target', 'notes']) if (output[field] !== undefined) output[field] = boundedText(output[field], `Milestone ${field}`, false, field === 'notes' ? 1000 : 160);
+    if (output.status !== undefined || type === 'create_milestone') output.status = POLICY.allowedStatuses.includes(output.status) ? output.status : 'planned';
+    if (output.progress !== undefined || type === 'create_milestone') { output.progress = Number(output.progress || 0); if (!Number.isFinite(output.progress) || output.progress < 0 || output.progress > 100) throw new Error('Milestone progress must be between 0 and 100'); }
+    if (output.status === 'done') output.progress = 100;
+    if (type === 'update_milestone' && !Object.keys(output).some(key => !['type', 'id', 'source'].includes(key))) throw new Error('Milestone update has no editable fields');
+  } else if (type === 'delete_milestone') {
+    output.id = boundedText(output.id, 'Milestone id', true);
   } else if (type === 'log_progress') {
     output.content = boundedText(output.content, 'Progress content', true);
     output.projectId = boundedText(output.projectId, 'Progress projectId');
@@ -121,18 +174,11 @@ function normalizeOperation(input, source) {
     for (const field of ['weight', 'progress']) if (output[field] !== undefined && (!Number.isFinite(Number(output[field])) || Number(output[field]) < 0 || Number(output[field]) > 100)) throw new Error(`Performance ${field} must be between 0 and 100`);
     if (!Object.keys(output).some(key => !['type', 'recordType', 'id', 'source'].includes(key))) throw new Error('Performance update has no editable fields');
   } else if (type === 'log_fitness_session') {
-    output.plan = boundedText(output.plan, 'Fitness plan', true, 40);
-    if (output.plan !== 'strength') throw new Error('Fitness plan is invalid');
-    output.session = boundedText(output.session, 'Fitness session', true, 10);
-    if (!['A', 'B', 'C'].includes(output.session)) throw new Error('Fitness session must be A, B, or C');
-    output.performedAt = normalizeDate(output.performedAt, 'Fitness performedAt') || new Date().toISOString();
-    for (const field of ['durationMinutes', 'sets', 'reps', 'loadKg', 'rpe', 'quality', 'soreness24', 'soreness48']) {
-      if (['soreness24', 'soreness48'].includes(field) && (output[field] === '' || output[field] === null || output[field] === undefined)) { output[field] = null; continue; }
-      const value = Number(output[field]);
-      if (!Number.isFinite(value) || value < 0 || (['rpe', 'soreness24', 'soreness48'].includes(field) && value > 10) || (field === 'quality' && value > 5)) throw new Error(`Fitness ${field} is invalid`);
-      output[field] = value;
-    }
-    output.notes = boundedText(output.notes, 'Fitness notes', false, 1000);
+    normalizeFitnessSession(output);
+  } else if (type === 'update_fitness_session') {
+    normalizeFitnessSession(output, { includeId: true });
+  } else if (type === 'delete_fitness_session') {
+    output.id = boundedText(output.id, 'Fitness session id', true);
   } else if (type === 'log_hike') {
     output.performedAt = normalizeDate(output.performedAt, 'Hike performedAt') || new Date().toISOString();
     for (const field of ['durationMinutes', 'distanceKm', 'elevationM', 'effort']) {
@@ -151,15 +197,6 @@ function normalizeOperation(input, source) {
     output.weightKg = Number(output.weightKg);
     if (!Number.isFinite(output.weightKg) || output.weightKg <= 0 || output.weightKg > 400) throw new Error('Fitness weightKg is invalid');
     output.measuredAt = normalizeDate(output.measuredAt, 'Fitness measuredAt') || new Date().toISOString();
-  } else if (type === 'update_fitness_session') {
-    output.id = boundedText(output.id, 'Fitness session id', true);
-    for (const field of ['soreness24', 'soreness48']) {
-      if (output[field] === undefined) continue;
-      const value = Number(output[field]);
-      if (!Number.isFinite(value) || value < 0 || value > 10) throw new Error(`Fitness ${field} is invalid`);
-      output[field] = value;
-    }
-    if (output.soreness24 === undefined && output.soreness48 === undefined) throw new Error('Fitness session update has no editable fields');
   }
 
   output.source = normalizedSource(output.source, source);
@@ -183,7 +220,7 @@ function validateProposal(proposal) {
     return { operations: [], needsConfirmation: true, clarification };
   }
   const normalized = validateOperations(proposal.operations, { source: 'llm' });
-  if (normalized.operations.some(operation => operation.type === 'delete_task')) throw new Error('LLM cannot delete Planner tasks');
+  if (normalized.operations.some(operation => operation.type.startsWith('delete_'))) throw new Error('LLM cannot delete Planner records');
   if (normalized.operations.some(operation => operation.type.includes('performance'))) throw new Error('LLM cannot process performance-management records');
   if (normalized.operations.some(operation => operation.type.includes('fitness') || operation.type === 'log_hike')) throw new Error('LLM cannot process private tracking records');
   return { operations: normalized.operations, needsConfirmation: true, clarification };

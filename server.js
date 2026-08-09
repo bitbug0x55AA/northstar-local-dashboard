@@ -18,6 +18,7 @@ const LOCAL_ORIGINS = new Set([`http://127.0.0.1:${PORT}`, `http://localhost:${P
 const CREDENTIAL_DIR = process.platform === 'win32' && HOME ? path.join(HOME, 'AppData', 'Roaming', 'Northstar') : '';
 const CREDENTIAL_FILE = CREDENTIAL_DIR ? path.join(CREDENTIAL_DIR, 'github-token.dpapi') : '';
 const PLANNER_ENABLED = process.env.NORTHSTAR_PLANNER_ENABLED === 'true';
+const GITHUB_POLISH_ALERT_DEDUPE_MS = 60 * 60 * 1000;
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -824,12 +825,19 @@ const server = http.createServer(async (req, res) => {
         const failedPolishRefs = new Set(polished.failedSourceRefs || []);
         for (const [index, failure] of (polished.failedBatches || []).entries()) {
           const timedOut = failure.code === 'LLM_TIMEOUT';
+          const eventType = timedOut ? 'github_polish_timeout' : 'github_polish_failure';
+          const duplicate = listEvents({ tab: 'llm' }).some(event => event.eventType === eventType
+            && event.status === 'open'
+            && event.details?.code === failure.code
+            && JSON.stringify(event.details?.sourceRefs || []) === JSON.stringify(failure.sourceRefs || [])
+            && Date.now() - new Date(event.timestamp).getTime() < GITHUB_POLISH_ALERT_DEDUPE_MS);
+          if (duplicate) continue;
           recordEvent({
             id: `github-planner-polish-${Date.now()}-${index}`,
             tab: 'llm',
             level: timedOut ? 'error' : 'warning',
             source: 'ollama',
-            eventType: timedOut ? 'github_polish_timeout' : 'github_polish_failure',
+            eventType,
             message: timedOut
               ? 'GitHub Planner LLM batch timed out; the affected tasks used GitHub fallback text.'
               : 'GitHub Planner LLM batch failed; the affected tasks used GitHub fallback text.',

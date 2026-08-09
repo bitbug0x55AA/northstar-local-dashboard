@@ -42,4 +42,24 @@ const performanceGoal = validateOperations([{ type: 'create_performance_goal', t
 assert.equal(performanceGoal.operations[0].weight, 40);
 assert.throws(() => validateProposal({ operations: [{ type: 'create_performance_goal', title: 'Do not send to model', weight: 10 }] }), /cannot process performance-management records/);
 
+const unilateralStrength = validateOperations([{
+  type: 'log_fitness_session', plan: 'strength', session: 'A', performedAt: '2026-08-09T10:00:00.000Z',
+  durationMinutes: 45, exercises: [{ exerciseName: '单腿 Bench 臀推', sets: 3, setsArePerSide: true, reps: 10, loadKg: 20 }], rpe: 8, quality: 4, notes: ''
+}], { source: 'manual' }).operations[0];
+assert.equal(unilateralStrength.exercises[0].exerciseName, '单腿 Bench 臀推');
+assert.equal(unilateralStrength.exercises[0].sets, 3);
+assert.equal(unilateralStrength.exercises[0].reps, 10);
+assert.equal(unilateralStrength.exercises[0].setsArePerSide, true);
+const updatedStrength = validateOperations([{
+  type: 'update_fitness_session', id: 'session-1', plan: 'strength', session: 'A', performedAt: '2026-08-09T10:00:00.000Z',
+  durationMinutes: 50, exercises: unilateralStrength.exercises, rpe: 7, quality: 5, soreness24: '', soreness48: '', notes: 'Edited session'
+}], { source: 'manual' }).operations[0];
+assert.equal(updatedStrength.id, 'session-1');
+assert.equal(updatedStrength.exercises.length, 1);
+assert.equal(validateOperations([{ type: 'delete_fitness_session', id: 'session-1' }], { source: 'manual' }).operations[0].id, 'session-1');
+assert.throws(() => validateOperations([{
+  type: 'log_fitness_session', plan: 'strength', session: 'A', durationMinutes: 45,
+  exercises: [], rpe: 8, quality: 4
+}], { source: 'manual' }), /exercises/);
+
 console.log('Planner policy checks passed');
