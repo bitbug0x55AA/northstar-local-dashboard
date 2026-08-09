@@ -252,6 +252,7 @@ function usageFromPath(provider, targetPath, budgetTokens) {
   let limits = null;
   let limitsAt = null;
   let lastEventAt = null;
+  const creditSnapshots = new Map();
   const runtime = { eventsObserved: 0, requests: 0, providerErrors: 0, toolCalls: 0, toolResults: 0, toolFailures: 0, latencySamples: [] };
 
   for (const file of files) {
@@ -286,6 +287,12 @@ function usageFromPath(provider, targetPath, budgetTokens) {
       sessions.set(sessionId, current);
 
       if (parsed.limits && (!limitsAt || observedAt >= limitsAt)) { limits = parsed.limits; limitsAt = observedAt; }
+      const rawCreditBalance = parsed.limits?.credits?.balance;
+      const creditBalance = Number(rawCreditBalance);
+      if (rawCreditBalance !== null && rawCreditBalance !== undefined && rawCreditBalance !== '' && Number.isFinite(creditBalance)) {
+        const snapshot = { provider, observedAt: observedAt.toISOString(), balance: creditBalance, currency: 'credits', source: 'provider_log' };
+        creditSnapshots.set(`${snapshot.observedAt}:${snapshot.balance}`, snapshot);
+      }
       if (!parsed.usage || parsed.usageKind !== 'delta' || !parsed.usage.total) continue;
       const eventId = parsed.requestId ? `${provider}:${sessionId}:${parsed.requestId}` : `${provider}:${fileId}:${item.line}`;
       if (seenEvents.has(eventId)) { health.duplicateEvents += 1; continue; }
@@ -338,7 +345,8 @@ function usageFromPath(provider, targetPath, budgetTokens) {
     sessionDetails, sessionWindows, limits: limits ? { ...limits, updatedAt: limitsAt.toISOString() } : null,
     models: Array.from(models.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, tokens], index) => ({ name, value: modelTotal ? Math.round(tokens / modelTotal * 100) : 0, tokens, color: colors[index % colors.length] })),
     ingestion: { parserVersion: PARSER_VERSION, provider, ...health, lastEventAt: lastEventAt ? lastEventAt.toISOString() : null, confidence },
-    runtime: runtimeSummary
+    runtime: runtimeSummary,
+    creditSnapshots: Array.from(creditSnapshots.values()).sort((a, b) => new Date(a.observedAt) - new Date(b.observedAt))
   };
 }
 

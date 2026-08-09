@@ -79,6 +79,8 @@ Usage measurement uses versioned, provider-specific adapters. Only explicit per-
 
 AI Monitoring is deliberately scoped to Codex and Claude Code. Ollama is an optional local tool used by Planner features and remains visible in the separate Local LLM audit category, but it is not included in AI usage, session health, provider quality, or tool-success measurements.
 
+Credit balances reported in provider logs are retained in a local finance ledger. Northstar reconciles adjacent snapshots into observed credit increases and consumption, without manual entry. These changes are not labeled as cash purchases because a balance increase can also represent an automatic top-up, grant, refund, or shared-pool adjustment. Override the default ledger location with `NORTHSTAR_FINANCE_PATH`.
+
 ## Personal Planner
 
 The Planner is intentionally isolated behind an environment flag. To run this branch with the Planner enabled:

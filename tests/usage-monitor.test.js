@@ -26,12 +26,13 @@ test('Codex adapter deduplicates request deltas and keeps the latest context gau
 test('unsupported cumulative Codex snapshots are not added as request usage', t => {
   const directory = tempDirectory();
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const cumulativeOnly = { timestamp: new Date().toISOString(), payload: { session_id: 'session-2', info: { total_token_usage: { total_tokens: 500000 } } } };
+  const cumulativeOnly = { timestamp: new Date().toISOString(), payload: { session_id: 'session-2', info: { total_token_usage: { total_tokens: 500000 }, rate_limits: { credits: { has_credits: true } } } } };
   fs.writeFileSync(path.join(directory, 'session.jsonl'), `${JSON.stringify(cumulativeOnly)}\n`);
   const usage = usageFromPath('codex', directory, 1000000);
   assert.equal(usage.monthTokens, 0);
   assert.equal(usage.ingestion.recordsAccepted, 0);
   assert.equal(usage.ingestion.confidence.level, 'unavailable');
+  assert.equal(usage.creditSnapshots.length, 0, 'a credits object without a balance is not a zero-balance snapshot');
 });
 
 test('Claude adapter reports explicit tool failures without involving Ollama', t => {

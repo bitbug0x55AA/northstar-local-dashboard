@@ -8,6 +8,7 @@ const { GITHUB_POLISH_VERSION, interpretPlannerInput, reviewFitness, polishGithu
 const { recordEvent, listEvents, acknowledgeEvent, summarize } = require('./server/observability-store');
 const { analyzeMergeWorkspace, discoverWorkspaces } = require('./server/merge-orchestrator');
 const { getLocalUsage: getReliableLocalUsage } = require('./server/usage-monitor');
+const { updateFinance } = require('./server/finance-store');
 
 const PORT = Number(process.env.PORT || 4173);
 const ROOT = __dirname;
@@ -757,7 +758,9 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method === 'GET' && req.url === '/api/usage') {
-      sendJson(res, 200, getReliableLocalUsage());
+      const usage = getReliableLocalUsage();
+      usage.finance = updateFinance(usage);
+      sendJson(res, 200, usage);
       return;
     }
     if (req.method === 'GET' && req.url.startsWith('/api/observability')) {
