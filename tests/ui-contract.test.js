@@ -23,6 +23,14 @@ test('core dashboard language switch has bidirectional labels and Chinese fallba
   assert.match(app, /document\.documentElement\.lang=isEnglish\(\)\?'en':'zh-CN'/, 'the document language must track the selected language');
 });
 
+test('AI usage keeps the summary renderable when cached data is partial', () => {
+  const app = sources.find(source => source.name === 'app.js').content;
+  const index = sources.find(source => source.name === 'index.html').content;
+  assert.match(app, /function normalizeUsage\(value\)/, 'usage data must be normalized before rendering');
+  assert.match(app, /state\.usage=normalizeUsage\(state\.usage\)/, 'every render must recover from partial usage state');
+  assert.doesNotMatch(index, /session-monitor\.js/, 'session monitoring must not mutate the usage page from a second render path');
+});
+
 test('observability UI has a bilingual rendering contract', () => {
   const observability = sources.find(source => source.name === 'observability.js').content;
   assert.match(observability, /const tr = \(zh, en\) => document\.documentElement\.lang === 'en' \? en : zh/, 'observability must use the selected document language');
