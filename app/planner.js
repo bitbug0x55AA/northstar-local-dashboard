@@ -40,7 +40,7 @@
       state.activePage = localStorage.getItem(storageKey) || 'overview';
       keepNavigationLabel();
       new MutationObserver(() => { keepNavigationLabel(); render(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
-      nav.addEventListener('click', () => { navigation.setExpanded(sideNav.hidden); setTimeout(keepNavigationLabel, 0); }, true);
+      nav.addEventListener('click', event => { if (event.isTrusted) { state.activePage = 'overview'; state.editingTaskId = null; state.draftCategory = null; } navigation.setExpanded(sideNav.hidden); setTimeout(keepNavigationLabel, 0); }, true);
       sideNav.addEventListener('click', event => { const button = event.target.closest('[data-planner-sidepage]'); if (!button) return; event.preventDefault(); event.stopPropagation(); state.activePage = button.dataset.plannerSidepage; state.editingTaskId = null; state.draftCategory = null; nav.click(); setTimeout(() => { render(); navigation.setExpanded(true); }, 0); }, true);
       document.addEventListener('click', event => { const item = event.target.closest('.nav-item'); if (item && item !== nav) navigation.setExpanded(false); }, true);
       await load();
